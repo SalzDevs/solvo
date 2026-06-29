@@ -1,4 +1,5 @@
 import { Database } from 'bun:sqlite';
+import { DEFAULT_THEME_ID } from '$lib/themes';
 import type { Settings, Subscription } from '$lib/types';
 
 /**
@@ -57,7 +58,8 @@ function migrate(database: Database): void {
 
 const DEFAULT_SETTINGS: Settings = {
 	displayCurrency: 'EUR',
-	fxEurToUsd: 1.08
+	fxEurToUsd: 1.08,
+	theme: DEFAULT_THEME_ID
 };
 
 function seedSettings(database: Database): void {
@@ -66,6 +68,7 @@ function seedSettings(database: Database): void {
 	);
 	insert.run({ $key: 'displayCurrency', $value: DEFAULT_SETTINGS.displayCurrency });
 	insert.run({ $key: 'fxEurToUsd', $value: String(DEFAULT_SETTINGS.fxEurToUsd) });
+	insert.run({ $key: 'theme', $value: DEFAULT_SETTINGS.theme });
 }
 
 /** ISO date `offsetDays` from today (UTC), e.g. -2 = two days ago. */

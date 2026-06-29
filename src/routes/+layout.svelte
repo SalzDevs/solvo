@@ -3,9 +3,12 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { page } from '$app/state';
 	import { Toaster } from '$lib/components/ui/sonner';
+	import { DEFAULT_THEME_ID } from '$lib/themes';
 	import { LayoutDashboard, ListChecks, Settings } from '@lucide/svelte';
+	import type { LayoutData } from './$types';
+	import type { Snippet } from 'svelte';
 
-	let { children } = $props();
+	let { data, children }: { data: LayoutData; children: Snippet } = $props();
 
 	const nav = [
 		{ href: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -16,6 +19,18 @@
 	function isActive(href: string): boolean {
 		return href === '/' ? page.url.pathname === '/' : page.url.pathname.startsWith(href);
 	}
+
+	// Keep the data-theme attribute on <html> in sync with the persisted
+	// theme. The inline script in app.html handles the very first paint;
+	// this effect covers client-side navigations and post-save invalidation.
+	$effect(() => {
+		const theme = data.settings?.theme ?? DEFAULT_THEME_ID;
+		if (theme && theme !== DEFAULT_THEME_ID) {
+			document.documentElement.setAttribute('data-theme', theme);
+		} else {
+			document.documentElement.removeAttribute('data-theme');
+		}
+	});
 </script>
 
 <svelte:head>

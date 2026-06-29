@@ -1,6 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { getSettings, importData, updateSettings, type ExportBundle } from '$lib/server/subscriptions';
-import { CURRENCIES, type Currency } from '$lib/types';
+import { isKnownTheme } from '$lib/themes';
+import { CURRENCIES, type Currency, type Settings } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
@@ -18,7 +19,30 @@ export const actions: Actions = {
 		if (!Number.isFinite(fxEurToUsd) || fxEurToUsd <= 0) {
 			return fail(400, { error: 'Exchange rate must be a positive number.' });
 		}
-		updateSettings({ displayCurrency, fxEurToUsd });
+		// Preserve the current theme when saving currency settings; the theme
+		// has its own dedicated action that sets the cookie.
+		const current = getSettings();
+		const next: Settings = { displayCurrency, fxEurToUsd, theme: current.theme };
+		updateSettings(next);
+		return { success: true };
+	},
+
+	saveTheme: async ({ request, cookies }) => {
+		const form = await request.formData();
+		const theme = (form.get('theme') ?? '').toString();
+		if (!isKnownTheme(theme)) {
+			return fail(400, { error: 'Unknown theme.' });
+		}
+		const current = getSettings();
+		updateSettings({ ...current, theme });
+		// Mirror the theme in a cookie so the inline script in app.html can
+		// apply it before first paint on the next navigation/load.
+		cookies.set('solvo-theme', theme, {
+			path: '/',
+			maxAge: 60 * 60 * 24 * 365,
+			sameSite: 'lax',
+			httpOnly: false
+		});
 		return { success: true };
 	},
 

@@ -1,3 +1,5 @@
+import type { ThemeId } from './themes';
+
 export type Currency = 'EUR' | 'USD';
 
 export const CURRENCIES: Currency[] = ['EUR', 'USD'];
@@ -45,4 +47,6 @@ export interface Settings {
 	displayCurrency: Currency;
 	/** How many USD make 1 EUR. */
 	fxEurToUsd: number;
+	/** Visual theme. The id is a `ThemeId` from `$lib/themes`. */
+	theme: ThemeId;
 }

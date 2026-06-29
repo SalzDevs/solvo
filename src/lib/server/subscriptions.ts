@@ -1,4 +1,5 @@
 import { rollForward, today } from '$lib/renewals';
+import { DEFAULT_THEME_ID, isKnownTheme } from '$lib/themes';
 import type { BillingCycle, Settings, Subscription, SubscriptionInput } from '$lib/types';
 import { getDb, rowToSubscription, type SubscriptionRow } from './db';
 
@@ -146,9 +147,11 @@ export function getSettings(): Settings {
 		value: string;
 	}[];
 	const map = new Map(rows.map((r) => [r.key, r.value]));
+	const theme = map.get('theme') ?? DEFAULT_THEME_ID;
 	return {
 		displayCurrency: (map.get('displayCurrency') as Settings['displayCurrency']) ?? 'EUR',
-		fxEurToUsd: Number(map.get('fxEurToUsd') ?? '1.08')
+		fxEurToUsd: Number(map.get('fxEurToUsd') ?? '1.08'),
+		theme: isKnownTheme(theme) ? theme : DEFAULT_THEME_ID
 	};
 }
 
@@ -159,6 +162,7 @@ export function updateSettings(settings: Settings): Settings {
 	);
 	upsert.run({ $key: 'displayCurrency', $value: settings.displayCurrency });
 	upsert.run({ $key: 'fxEurToUsd', $value: String(settings.fxEurToUsd) });
+	upsert.run({ $key: 'theme', $value: settings.theme });
 	return getSettings();
 }
 

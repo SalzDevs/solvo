@@ -6,11 +6,14 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import { THEMES, getTheme } from '$lib/themes';
 	import { CURRENCIES } from '$lib/types';
-	import { Download, Upload } from '@lucide/svelte';
+	import { Check, Download, Palette, Upload } from '@lucide/svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	const currentThemeId = $derived(getTheme(data.settings.theme).id);
 
 	const selectClass =
 		'border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs focus-visible:ring-1 focus-visible:outline-none';
@@ -19,8 +22,90 @@
 <div class="space-y-6">
 	<div>
 		<h1 class="text-2xl font-semibold tracking-tight">Settings</h1>
-		<p class="text-sm text-muted-foreground">Display currency, exchange rate, and your data.</p>
+		<p class="text-sm text-muted-foreground">
+			Customize how Solvo looks, how totals are calculated, and manage your data.
+		</p>
 	</div>
+
+	<Card.Root>
+		<Card.Header>
+			<Card.Title class="flex items-center gap-2">
+				<Palette class="size-4" />
+				Appearance
+			</Card.Title>
+			<Card.Description>
+				Pick a theme. The default is the classic Solvo look; the others change the palette
+				across the whole app.
+			</Card.Description>
+		</Card.Header>
+		<Card.Content>
+			<form
+				method="POST"
+				action="?/saveTheme"
+				class="space-y-4"
+				use:enhance={() => {
+					return async ({ result, update }) => {
+						await update({ reset: false });
+						if (result.type === 'success') {
+							toast.success('Theme saved');
+							await invalidateAll();
+						} else if (result.type === 'failure') {
+							toast.error(String(result.data?.error ?? 'Could not save theme'));
+						}
+					};
+				}}
+			>
+				<fieldset class="grid gap-3 sm:grid-cols-2">
+					<legend class="sr-only">Theme</legend>
+					{#each THEMES as t (t.id)}
+						<label
+							class="has-[:checked]:border-primary has-[:checked]:ring-primary/40 hover:bg-muted/30 flex cursor-pointer flex-col gap-3 rounded-lg border p-4 transition-colors has-[:checked]:ring-2 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring/60"
+						>
+							<input
+								type="radio"
+								name="theme"
+								value={t.id}
+								checked={t.id === currentThemeId}
+								class="sr-only"
+							/>
+							<div class="flex items-start justify-between gap-2">
+								<div>
+									<p class="text-sm font-medium">{t.label}</p>
+									<p class="text-xs text-muted-foreground">{t.description}</p>
+								</div>
+								{#if t.id === currentThemeId}
+									<Check class="text-primary size-4 shrink-0" aria-label="Selected" />
+								{/if}
+							</div>
+							<div class="flex gap-1.5" aria-hidden="true">
+								<span
+									class="border-border/40 size-6 rounded-md border"
+									style="background: {t.preview.background}"
+									title="Background"
+								></span>
+								<span
+									class="border-border/40 size-6 rounded-md border"
+									style="background: {t.preview.foreground}"
+									title="Foreground"
+								></span>
+								<span
+									class="size-6 rounded-md"
+									style="background: {t.preview.primary}"
+									title="Primary"
+								></span>
+								<span
+									class="border-border/40 size-6 rounded-md border"
+									style="background: {t.preview.accent}"
+									title="Accent"
+								></span>
+							</div>
+						</label>
+					{/each}
+				</fieldset>
+				<Button type="submit">Save theme</Button>
+			</form>
+		</Card.Content>
+	</Card.Root>
 
 	<Card.Root>
 		<Card.Header>
