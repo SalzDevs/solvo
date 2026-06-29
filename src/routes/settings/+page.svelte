@@ -1,19 +1,47 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import * as Card from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { THEMES, getTheme } from '$lib/themes';
+	import { DEFAULT_THEME_ID, THEMES, getTheme } from '$lib/themes';
 	import { CURRENCIES } from '$lib/types';
 	import { Check, Download, Palette, Upload } from '@lucide/svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	const currentThemeId = $derived(getTheme(data.settings.theme).id);
+	// Tracks the user's current selection. Initialised from the server's
+	// theme, then driven by `bind:group` on the radio inputs. Using local
+	// state (rather than reading from data.settings.theme) means the card
+	// stays visually "selected" immediately on click, without waiting for
+	// the save round-trip.
+	// `untrack` tells the compiler the read is intentional, not a missed
+	// derived dependency.
+	let selectedTheme = $state<string>(untrack(() => getTheme(data.settings.theme).id));
+	let themeForm: HTMLFormElement | undefined = $state();
+	let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function applyTheme(themeId: string): void {
+		if (themeId === DEFAULT_THEME_ID) {
+			document.documentElement.removeAttribute('data-theme');
+		} else {
+			document.documentElement.setAttribute('data-theme', themeId);
+		}
+	}
+
+	// Apply the theme instantly and debounce a save. The bind:group on the
+	// radio has already updated `selectedTheme` by the time this fires.
+	function onThemeChange(): void {
+		applyTheme(selectedTheme);
+		if (saveTimer !== null) clearTimeout(saveTimer);
+		saveTimer = setTimeout(() => {
+			themeForm?.requestSubmit();
+		}, 300);
+	}
 
 	const selectClass =
 		'border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs focus-visible:ring-1 focus-visible:outline-none';
@@ -40,16 +68,17 @@
 		</Card.Header>
 		<Card.Content>
 			<form
+				bind:this={themeForm}
 				method="POST"
 				action="?/saveTheme"
 				class="space-y-4"
 				use:enhance={() => {
 					return async ({ result, update }) => {
+						// update() invalidates all data by default, so the
+						// layout's $effect picks up the new theme and the
+						// server's data stays in sync.
 						await update({ reset: false });
-						if (result.type === 'success') {
-							toast.success('Theme saved');
-							await invalidateAll();
-						} else if (result.type === 'failure') {
+						if (result.type === 'failure') {
 							toast.error(String(result.data?.error ?? 'Could not save theme'));
 						}
 					};
@@ -64,8 +93,9 @@
 							<input
 								type="radio"
 								name="theme"
+								bind:group={selectedTheme}
 								value={t.id}
-								checked={t.id === currentThemeId}
+								onchange={onThemeChange}
 								class="sr-only"
 							/>
 							<div class="flex items-start justify-between gap-2">
@@ -73,7 +103,7 @@
 									<p class="text-sm font-medium">{t.label}</p>
 									<p class="text-xs text-muted-foreground">{t.description}</p>
 								</div>
-								{#if t.id === currentThemeId}
+								{#if t.id === selectedTheme}
 									<Check class="text-primary size-4 shrink-0" aria-label="Selected" />
 								{/if}
 							</div>
@@ -102,7 +132,6 @@
 						</label>
 					{/each}
 				</fieldset>
-				<Button type="submit">Save theme</Button>
 			</form>
 		</Card.Content>
 	</Card.Root>
