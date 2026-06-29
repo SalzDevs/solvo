@@ -187,20 +187,36 @@ export function importData(bundle: ExportBundle): void {
 	const db = getDb();
 	const tx = db.transaction((b: ExportBundle) => {
 		db.exec('DELETE FROM subscriptions');
+		// Direct insert (not createSubscription) so we preserve cancelledAt,
+		// createdAt, and updatedAt — SubscriptionInput strips those fields and
+		// a round-trip through createSubscription would lose them.
+		const insert = db.query(
+			`INSERT INTO subscriptions
+				(name, category, amount, currency, cycle, cycle_count, start_date,
+				 next_renewal, status, cancel_url, cancel_notes, cancelled_at, notes,
+				 created_at, updated_at)
+			 VALUES
+				($name, $category, $amount, $currency, $cycle, $cycleCount, $startDate,
+				 $nextRenewal, $status, $cancelUrl, $cancelNotes, $cancelledAt, $notes,
+				 $createdAt, $updatedAt)`
+		);
 		for (const s of b.subscriptions) {
-			createSubscription({
-				name: s.name,
-				category: s.category,
-				amount: s.amount,
-				currency: s.currency,
-				cycle: s.cycle,
-				cycleCount: s.cycleCount,
-				startDate: s.startDate,
-				nextRenewal: s.nextRenewal,
-				status: s.status,
-				cancelUrl: s.cancelUrl,
-				cancelNotes: s.cancelNotes,
-				notes: s.notes
+			insert.run({
+				$name: s.name,
+				$category: s.category,
+				$amount: s.amount,
+				$currency: s.currency,
+				$cycle: s.cycle,
+				$cycleCount: s.cycleCount,
+				$startDate: s.startDate,
+				$nextRenewal: s.nextRenewal,
+				$status: s.status,
+				$cancelUrl: s.cancelUrl,
+				$cancelNotes: s.cancelNotes,
+				$cancelledAt: s.cancelledAt,
+				$notes: s.notes,
+				$createdAt: s.createdAt,
+				$updatedAt: s.updatedAt
 			});
 		}
 		if (b.settings) updateSettings(b.settings);
