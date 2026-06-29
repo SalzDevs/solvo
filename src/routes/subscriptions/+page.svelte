@@ -94,7 +94,7 @@
 	let cancelConfirmationError = $state<string | null>(null);
 
 	let trialDialogOpen = $state(false);
-	let pendingTrialSub = $state<Subscription | null>(null);
+	let pendingTrialSubId = $state('');
 	let trialEndsOn = $state('');
 
 	const cancelPhrase = $derived(
@@ -190,8 +190,14 @@
 		cancelConfirmationError = null;
 	}
 
-	function openTrialDialog(sub: Subscription) {
-		pendingTrialSub = sub;
+	function openTrialDialog() {
+		// Pre-select the first eligible subscription (active + not already
+		// on trial) so the user can submit with a single click if the
+		// default date is fine.
+		const eligible = data.subscriptions.find(
+			(s) => s.status === 'active' && !s.isTrial
+		);
+		pendingTrialSubId = eligible ? String(eligible.id) : '';
 		// Default to one week out — gives the user a sensible starting point
 		// but is always overridable.
 		const oneWeekOut = new Date();
@@ -215,10 +221,16 @@
 			<h1 class="text-2xl font-semibold tracking-tight">Subscriptions</h1>
 			<p class="text-sm text-muted-foreground">Track, price, and cancel your recurring spend.</p>
 		</div>
-		<Button onclick={openAdd}>
-			<Plus class="size-4" />
-			Add subscription
-		</Button>
+		<div class="flex gap-2">
+			<Button onclick={openAdd}>
+				<Plus class="size-4" />
+				Add subscription
+			</Button>
+			<Button variant="outline" onclick={openTrialDialog}>
+				<Clock class="size-4" />
+				Start trial
+			</Button>
+		</div>
 	</div>
 
 	<Card.Root>
@@ -330,16 +342,6 @@
 														<ClockAlert class="size-4" />
 													</Button>
 												</form>
-											{:else}
-												<Button
-													type="button"
-													variant="ghost"
-													size="icon"
-													title="Start trial"
-													onclick={() => openTrialDialog(sub)}
-												>
-													<Clock class="size-4" />
-												</Button>
 											{/if}
 
 											<Button
@@ -710,47 +712,82 @@
 		<Dialog.Header>
 			<Dialog.Title>Start trial</Dialog.Title>
 			<Dialog.Description>
-				{#if pendingTrialSub}
-					<strong>{pendingTrialSub.name}</strong> will stay free until the date you
-					pick. If you don't cancel the trial before then, it converts to a paid
-					subscription and the normal billing cycle takes over.
-				{/if}
+				Pick the active subscription and the date its free trial ends. If you
+				don't cancel the trial before then, it converts to a paid subscription
+				and the normal billing cycle takes over.
 			</Dialog.Description>
 		</Dialog.Header>
-		<form
-			method="POST"
-			action="?/startTrial"
-			class="space-y-4"
-			use:enhance={() => {
-				return async ({ result, update }) => {
-					await update({ reset: false });
-					if (result.type === 'success') {
-						toast.success(`Trial set for ${pendingTrialSub?.name ?? 'subscription'}`);
-						trialDialogOpen = false;
-						await invalidateAll();
-					} else if (result.type === 'failure') {
-						toast.error(String(result.data?.error ?? 'Could not start trial'));
-					}
-				};
-			}}
-		>
-			<input type="hidden" name="id" value={pendingTrialSub?.id ?? ''} />
-			<div class="grid gap-2">
-				<Label for="trialEndsOn">Trial ends on</Label>
-				<Input
-					id="trialEndsOn"
-					name="trialEndsOn"
-					type="date"
-					required
-					bind:value={trialEndsOn}
-				/>
-			</div>
+
+		{@const eligibleSubs = data.subscriptions.filter(
+			(s) => s.status === 'active' && !s.isTrial
+		)}
+
+		{#if eligibleSubs.length === 0}
+			<p class="text-muted-foreground text-sm">
+				No eligible subscriptions. A subscription must be active and not already
+				on trial.
+			</p>
 			<Dialog.Footer>
-				<Button type="button" variant="outline" onclick={() => (trialDialogOpen = false)}>
-					Cancel
+				<Button variant="outline" onclick={() => (trialDialogOpen = false)}>
+					Close
 				</Button>
-				<Button type="submit">Start trial</Button>
 			</Dialog.Footer>
-		</form>
+		{:else}
+			<form
+				method="POST"
+				action="?/startTrial"
+				class="space-y-4"
+				use:enhance={() => {
+					return async ({ result, update }) => {
+						await update({ reset: false });
+						if (result.type === 'success') {
+							const started = data.subscriptions.find(
+								(s) => String(s.id) === pendingTrialSubId
+							);
+							toast.success(`Trial set for ${started?.name ?? 'subscription'}`);
+							trialDialogOpen = false;
+							await invalidateAll();
+						} else if (result.type === 'failure') {
+							toast.error(String(result.data?.error ?? 'Could not start trial'));
+						}
+					};
+				}}
+			>
+				<div class="grid gap-2">
+					<Label for="trialSubId">Subscription</Label>
+					<select
+						id="trialSubId"
+						name="id"
+						bind:value={pendingTrialSubId}
+						class={selectClass}
+						required
+					>
+						{#each eligibleSubs as s (s.id)}
+							<option value={s.id}>
+								{s.name} — {formatMoney(s.amount, s.currency)}/{s.cycleCount > 1
+									? `${s.cycleCount} ${s.cycle}`
+									: s.cycle}
+							</option>
+						{/each}
+					</select>
+				</div>
+				<div class="grid gap-2">
+					<Label for="trialEndsOn">Trial ends on</Label>
+					<Input
+						id="trialEndsOn"
+						name="trialEndsOn"
+						type="date"
+						required
+						bind:value={trialEndsOn}
+					/>
+				</div>
+				<Dialog.Footer>
+					<Button type="button" variant="outline" onclick={() => (trialDialogOpen = false)}>
+						Cancel
+					</Button>
+					<Button type="submit">Start trial</Button>
+				</Dialog.Footer>
+			</form>
+		{/if}
 	</Dialog.Content>
 </Dialog.Root>
