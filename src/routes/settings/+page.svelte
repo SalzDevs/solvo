@@ -8,12 +8,13 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { DEFAULT_THEME_ID, THEMES, getTheme } from '$lib/themes';
-	import { CURRENCIES } from '$lib/types';
+	import { CURRENCIES, type Currency } from '$lib/types';
 	import { Check, Download, Palette, Upload } from '@lucide/svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
+	// --- Theme picker state ---
 	// Tracks the user's current selection. Initialised from the server's
 	// theme, then driven by `bind:group` on the radio inputs. Using local
 	// state (rather than reading from data.settings.theme) means the card
@@ -23,7 +24,7 @@
 	// derived dependency.
 	let selectedTheme = $state<string>(untrack(() => getTheme(data.settings.theme).id));
 	let themeForm: HTMLFormElement | undefined = $state();
-	let saveTimer: ReturnType<typeof setTimeout> | null = null;
+	let themeSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 	function applyTheme(themeId: string): void {
 		if (themeId === DEFAULT_THEME_ID) {
@@ -37,10 +38,27 @@
 	// radio has already updated `selectedTheme` by the time this fires.
 	function onThemeChange(): void {
 		applyTheme(selectedTheme);
-		if (saveTimer !== null) clearTimeout(saveTimer);
-		saveTimer = setTimeout(() => {
+		if (themeSaveTimer !== null) clearTimeout(themeSaveTimer);
+		themeSaveTimer = setTimeout(() => {
 			themeForm?.requestSubmit();
 		}, 300);
+	}
+
+	// --- Currency form state ---
+	// Mirrors the theme pattern: local state bound to the form fields, with
+	// a debounced submit. The longer 500ms debounce is so incremental edits
+	// to the exchange rate ("1." → "1.0" → "1.08") collapse into a single
+	// save instead of firing one per keystroke.
+	let displayCurrency = $state<Currency>(untrack(() => data.settings.displayCurrency));
+	let fxEurToUsd = $state<number>(untrack(() => data.settings.fxEurToUsd));
+	let settingsForm: HTMLFormElement | undefined = $state();
+	let currencySaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function onSettingsChange(): void {
+		if (currencySaveTimer !== null) clearTimeout(currencySaveTimer);
+		currencySaveTimer = setTimeout(() => {
+			settingsForm?.requestSubmit();
+		}, 500);
 	}
 
 	const selectClass =
@@ -146,16 +164,16 @@
 		</Card.Header>
 		<Card.Content>
 			<form
+				bind:this={settingsForm}
 				method="POST"
 				action="?/save"
 				class="space-y-4"
 				use:enhance={() => {
 					return async ({ result, update }) => {
+						// update() invalidates all data by default, so the
+						// dashboard picks up the new currency on next visit.
 						await update({ reset: false });
-						if (result.type === 'success') {
-							toast.success('Settings saved');
-							await invalidateAll();
-						} else if (result.type === 'failure') {
+						if (result.type === 'failure') {
 							toast.error(String(result.data?.error ?? 'Could not save settings'));
 						}
 					};
@@ -167,8 +185,9 @@
 						<select
 							id="displayCurrency"
 							name="displayCurrency"
+							bind:value={displayCurrency}
+							onchange={onSettingsChange}
 							class={selectClass}
-							value={data.settings.displayCurrency}
 						>
 							{#each CURRENCIES as c (c)}
 								<option value={c}>{c}</option>
@@ -183,11 +202,11 @@
 							type="number"
 							min="0"
 							step="0.0001"
-							value={data.settings.fxEurToUsd}
+							bind:value={fxEurToUsd}
+							oninput={onSettingsChange}
 						/>
 					</div>
 				</div>
-				<Button type="submit">Save settings</Button>
 			</form>
 		</Card.Content>
 	</Card.Root>
