@@ -1,3 +1,4 @@
+import { monthlyProjection } from '$lib/charts';
 import { byCategory, totals } from '$lib/cost';
 import { getSettings, listSubscriptions, syncRenewals } from '$lib/server/subscriptions';
 import type { PageServerLoad } from './$types';
@@ -17,6 +18,7 @@ export const load: PageServerLoad = async () => {
 		settings,
 		totals: totals(subscriptions, settings.displayCurrency, settings.fxEurToUsd),
 		categories: byCategory(subscriptions, settings.displayCurrency, settings.fxEurToUsd),
+		projection: monthlyProjection(subscriptions, settings.displayCurrency, settings.fxEurToUsd, 12),
 		counts: {
 			active: active.length,
 			total: subscriptions.length

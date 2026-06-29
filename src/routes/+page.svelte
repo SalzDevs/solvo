@@ -2,6 +2,8 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import BarChart from '$lib/components/charts/bar-chart.svelte';
+	import DonutChart from '$lib/components/charts/donut-chart.svelte';
 	import { formatMoney } from '$lib/cost';
 	import { renewalStatus, type RenewalTone } from '$lib/renewals';
 	import { CalendarClock, CircleDollarSign, Plus, TrendingDown } from '@lucide/svelte';
@@ -21,9 +23,20 @@
 		return formatMoney(Math.round(minor), cur);
 	}
 
-	function maxCategory(): number {
-		return Math.max(1, ...data.categories.map((c) => c.perMonth));
-	}
+	const maxMonth = $derived(Math.max(0, ...data.projection.map((b) => b.total)));
+
+	const projectionData = $derived(
+		data.projection.map((b) => ({
+			key: b.key,
+			label: b.label,
+			value: b.total,
+			emphasis: b.total === maxMonth && maxMonth > 0
+		}))
+	);
+
+	const categoryData = $derived(
+		data.categories.map((c) => ({ key: c.category, label: c.category, value: c.perMonth }))
+	);
 
 	function formatDate(iso: string): string {
 		return new Date(iso).toLocaleDateString(undefined, {
@@ -88,31 +101,27 @@
 			{/each}
 		</div>
 
+		<Card.Root>
+			<Card.Header>
+				<Card.Title>Projected spending</Card.Title>
+				<Card.Description>
+					Estimated charges over the next 12 months, in {cur} — annual subscriptions show up as
+					spikes on their renewal month.
+				</Card.Description>
+			</Card.Header>
+			<Card.Content>
+				<BarChart data={projectionData} formatValue={money} />
+			</Card.Content>
+		</Card.Root>
+
 		<div class="grid gap-6 md:grid-cols-2">
 			<Card.Root>
 				<Card.Header>
 					<Card.Title>Spend by category</Card.Title>
 					<Card.Description>Monthly, active subscriptions only</Card.Description>
 				</Card.Header>
-				<Card.Content class="space-y-3">
-					{#if data.categories.length === 0}
-						<p class="text-sm text-muted-foreground">No active subscriptions.</p>
-					{:else}
-						{#each data.categories as c (c.category)}
-							<div class="space-y-1">
-								<div class="flex items-center justify-between text-sm">
-									<span class="font-medium">{c.category}</span>
-									<span class="text-muted-foreground">{money(c.perMonth)}/mo</span>
-								</div>
-								<div class="h-2 overflow-hidden rounded-full bg-muted">
-									<div
-										class="h-full rounded-full bg-primary"
-										style="width: {(c.perMonth / maxCategory()) * 100}%"
-									></div>
-								</div>
-							</div>
-						{/each}
-					{/if}
+				<Card.Content>
+					<DonutChart data={categoryData} formatValue={money} centerLabel="per month" />
 				</Card.Content>
 			</Card.Root>
 

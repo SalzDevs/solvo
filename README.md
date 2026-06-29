@@ -80,7 +80,7 @@ src/
 - CSV / bank statement import
 - Live exchange-rate refresh
 - Renewal reminders & notifications (auto-advancing dates and urgency badges are already in)
-- Spending trends and charts
+- ~~Spending trends and charts~~ — done: 12-month projection + category donut on the dashboard
 
 ## License
 
