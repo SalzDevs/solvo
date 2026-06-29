@@ -17,6 +17,9 @@ Thumbs.db
 *.db-shm
 *.db-wal
 
+# Cancellation runtime: browser profiles, run logs, screenshots
+.solvo/
+
 # Env
 .env
 .env.*

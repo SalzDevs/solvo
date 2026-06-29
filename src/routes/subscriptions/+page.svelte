@@ -13,8 +13,23 @@
 	import { formatMoney, normalize } from '$lib/cost';
 	import { renewalStatus, type RenewalTone } from '$lib/renewals';
 	import { findProvider } from '$lib/registry';
+	import type { RunView } from '$lib/cancellation/types';
 	import { BILLING_CYCLES, CURRENCIES, type Subscription } from '$lib/types';
-	import { ExternalLink, Pencil, Plus, RotateCcw, Trash2, XCircle } from '@lucide/svelte';
+	import {
+		Check,
+		CircleAlert,
+		CircleDashed,
+		ExternalLink,
+		Loader,
+		Pencil,
+		Plus,
+		RotateCcw,
+		Trash2,
+		X,
+		XCircle,
+		Zap
+	} from '@lucide/svelte';
+	import { onDestroy } from 'svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -73,6 +88,81 @@
 		pendingDelete = sub;
 		deleteOpen = true;
 	}
+
+	let autoOpen = $state(false);
+	let autoSub = $state<Subscription | null>(null);
+	let runId = $state<string | null>(null);
+	let run = $state<RunView | null>(null);
+	let autoError = $state<string | null>(null);
+	let starting = $state(false);
+	let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function stopPolling() {
+		if (pollTimer) {
+			clearTimeout(pollTimer);
+			pollTimer = null;
+		}
+	}
+
+	function openAuto(sub: Subscription) {
+		autoSub = sub;
+		run = null;
+		runId = null;
+		autoError = null;
+		autoOpen = true;
+	}
+
+	function closeAuto() {
+		autoOpen = false;
+		stopPolling();
+	}
+
+	async function startAuto() {
+		if (!autoSub) return;
+		starting = true;
+		autoError = null;
+		try {
+			const res = await fetch('/api/cancel/start', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ subscriptionId: autoSub.id })
+			});
+			const data = await res.json();
+			if (!res.ok) {
+				autoError = data.error ?? 'Could not start cancellation.';
+				return;
+			}
+			runId = data.runId;
+			poll();
+		} catch {
+			autoError = 'Could not reach the cancellation service.';
+		} finally {
+			starting = false;
+		}
+	}
+
+	async function poll() {
+		if (!runId) return;
+		try {
+			const res = await fetch(`/api/cancel/status?runId=${runId}`);
+			if (res.ok) {
+				run = await res.json();
+				if (run?.status === 'succeeded') {
+					toast.success(`Cancelled ${autoSub?.name}`);
+					await invalidateAll();
+					return;
+				}
+				if (run?.status === 'failed') return;
+			}
+		} catch {
+			// keep polling through transient errors
+		}
+		pollTimer = setTimeout(poll, 1500);
+	}
+
+	const autoBusy = $derived(run?.status === 'running' || run?.status === 'waiting_user' || starting);
+
+	onDestroy(stopPolling);
 
 	const selectClass =
 		'border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs focus-visible:ring-1 focus-visible:outline-none';
@@ -204,6 +294,18 @@
 										<Button variant="ghost" size="icon" title="Edit" onclick={() => openEdit(sub)}>
 											<Pencil class="size-4" />
 										</Button>
+
+										{#if sub.status === 'active' && data.autoCancel[sub.id]}
+											<Button
+												variant="ghost"
+												size="icon"
+												title="Cancel automatically with Solvo"
+												class="text-primary hover:text-primary"
+												onclick={() => openAuto(sub)}
+											>
+												<Zap class="size-4" />
+											</Button>
+										{/if}
 
 										{#if sub.status === 'active'}
 											<form
@@ -468,3 +570,96 @@
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>
+
+<Dialog.Root
+	bind:open={autoOpen}
+	onOpenChange={(open) => {
+		if (!open) stopPolling();
+	}}
+>
+	<Dialog.Content class="sm:max-w-lg">
+		<Dialog.Header>
+			<Dialog.Title class="flex items-center gap-2">
+				<Zap class="size-4 text-primary" />
+				Cancel {autoSub?.name} automatically
+			</Dialog.Title>
+			<Dialog.Description>
+				Solvo will open a browser and click through the provider's cancellation flow. If a login or
+				2FA is needed, complete it in that window — Solvo never stores your password.
+			</Dialog.Description>
+		</Dialog.Header>
+
+		{#if autoError}
+			<p class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{autoError}</p>
+		{/if}
+
+		{#if run}
+			<ol class="space-y-2">
+				{#each run.steps as step (step.index)}
+					<li class="flex items-start gap-2 text-sm">
+						<span class="mt-0.5">
+							{#if step.status === 'ok'}
+								<Check class="size-4 text-emerald-600" />
+							{:else if step.status === 'fail'}
+								<X class="size-4 text-destructive" />
+							{:else if step.status === 'running'}
+								<Loader class="size-4 animate-spin text-primary" />
+							{:else if step.status === 'waiting'}
+								<CircleAlert class="size-4 text-amber-500" />
+							{:else}
+								<CircleDashed class="size-4 text-muted-foreground" />
+							{/if}
+						</span>
+						<span class="flex-1">
+							<span class={step.status === 'pending' ? 'text-muted-foreground' : ''}>
+								{step.description}
+							</span>
+							{#if step.status === 'waiting'}
+								<span class="block text-xs text-amber-600">
+									Waiting for you in the browser window…
+								</span>
+							{:else if step.message && step.status === 'fail'}
+								<span class="block text-xs text-destructive">{step.message}</span>
+							{/if}
+						</span>
+					</li>
+				{/each}
+			</ol>
+
+			{#if run.status === 'succeeded'}
+				<div class="space-y-2 rounded-md bg-emerald-500/10 p-3">
+					<p class="text-sm font-medium text-emerald-700 dark:text-emerald-400">
+						Cancelled successfully.
+					</p>
+					{#if run.screenshot}
+						<a href={run.screenshot} target="_blank" rel="noopener" class="text-xs underline">
+							View confirmation screenshot
+						</a>
+					{/if}
+				</div>
+			{:else if run.status === 'failed'}
+				<p class="text-sm text-destructive">
+					Automatic cancellation didn't complete. You can finish it manually with the assisted
+					cancel button, or try again.
+				</p>
+			{/if}
+		{/if}
+
+		<Dialog.Footer>
+			{#if run?.status === 'succeeded' || run?.status === 'failed'}
+				<Button onclick={closeAuto}>Done</Button>
+			{:else}
+				<Button variant="outline" onclick={closeAuto} disabled={autoBusy}>Cancel</Button>
+				<Button onclick={startAuto} disabled={autoBusy}>
+					{#if autoBusy}
+						<Loader class="size-4 animate-spin" />
+						Working…
+					{:else}
+						<Zap class="size-4" />
+						Start cancellation
+					{/if}
+				</Button>
+			{/if}
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
