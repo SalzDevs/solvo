@@ -6,10 +6,20 @@
 	import DonutChart from '$lib/components/charts/donut-chart.svelte';
 	import { bySubscription, formatMoney } from '$lib/cost';
 	import { renewalStatus, type RenewalTone } from '$lib/renewals';
-	import { ArrowLeft, CalendarClock, CircleDollarSign, Plus, TrendingDown } from '@lucide/svelte';
+	import { getActiveTrialReminders, type TrialTone } from '$lib/trials';
+	import {
+		ArrowLeft,
+		CalendarClock,
+		CircleDollarSign,
+		ClockAlert,
+		Plus,
+		TrendingDown
+	} from '@lucide/svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	const trialReminders = $derived(getActiveTrialReminders(data.subscriptions ?? []));
 
 	const cur = $derived(data.settings.displayCurrency);
 
@@ -81,6 +91,13 @@
 		soon: 'text-amber-600 dark:text-amber-500',
 		later: 'text-muted-foreground'
 	};
+
+	const trialToneClass: Record<TrialTone, string> = {
+		overdue: 'text-destructive',
+		today: 'text-destructive',
+		soon: 'text-amber-600 dark:text-amber-500',
+		later: 'text-muted-foreground'
+	};
 </script>
 
 <div class="space-y-8">
@@ -129,6 +146,50 @@
 				</Card.Root>
 			{/each}
 		</div>
+
+		{#if trialReminders.length > 0}
+			<Card.Root>
+				<Card.Header>
+					<Card.Title class="flex items-center gap-2">
+						<ClockAlert class="size-4" />
+						Active trials
+					</Card.Title>
+					<Card.Description>
+						Free trials on your subscriptions. They'll convert to a paid charge on the
+						end date unless you cancel them first.
+					</Card.Description>
+				</Card.Header>
+				<Card.Content>
+					<ul class="space-y-2">
+						{#each trialReminders as r (r.subscription.id)}
+							{@const willCost = formatMoney(r.subscription.amount, r.subscription.currency)}
+							<li
+								class="hover:bg-muted/30 flex items-center justify-between gap-3 rounded-md border px-3 py-2"
+							>
+								<div class="min-w-0 flex-1">
+									<p class="truncate text-sm font-medium">{r.subscription.name}</p>
+									<p class="text-muted-foreground text-xs">
+										{willCost}/{r.subscription.cycleCount > 1
+											? `${r.subscription.cycleCount} ${r.subscription.cycle}`
+											: r.subscription.cycle}
+										once the trial converts
+									</p>
+								</div>
+								<span
+									class="shrink-0 text-sm font-medium {trialToneClass[r.tone]}"
+									data-testid="trial-reminder-label"
+								>
+									{r.label}
+								</span>
+								<Button href="/subscriptions" variant="ghost" size="sm">
+									Manage
+								</Button>
+							</li>
+						{/each}
+					</ul>
+				</Card.Content>
+			</Card.Root>
+		{/if}
 
 		<Card.Root>
 			<Card.Header>

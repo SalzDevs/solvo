@@ -9,8 +9,10 @@ export const load: PageServerLoad = async () => {
 	const settings = getSettings();
 	const active = subscriptions.filter((s) => s.status === 'active');
 
+	// Trials are surfaced separately in the dashboard's trial card, so
+	// the "upcoming renewals" list is reserved for actual charges to expect.
 	const upcoming = active
-		.filter((s) => s.nextRenewal)
+		.filter((s) => s.nextRenewal && !s.isTrial)
 		.sort((a, b) => (a.nextRenewal! < b.nextRenewal! ? -1 : 1))
 		.slice(0, 5);
 
