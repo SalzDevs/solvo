@@ -33,7 +33,9 @@
 </script>
 
 <svelte:head>
-	<link rel="icon" href="/logo.png" type="image/png" />
+	<!-- ?v=2 busts the browser's cached default SvelteKit favicon when
+	     the user already had the app open before the logo swap. -->
+	<link rel="icon" href="/logo.png?v=2" type="image/png" />
 	<title>Solvo — subscription manager</title>
 </svelte:head>
 
