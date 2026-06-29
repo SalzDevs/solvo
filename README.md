@@ -1,5 +1,9 @@
 # Solvo
 
+<p align="center">
+  <img src="./static/logo.png" alt="Solvo" width="220" />
+</p>
+
 > _Solvo_ — Latin: to release, to set free, and to pay off. A local-first manager for your recurring subscriptions.
 
 Solvo helps you **see every subscription you pay for**, understand **what it actually costs you per day / month / year**, and **cancel** the ones you don't want — all stored locally on your machine. No accounts, no cloud, no tracking.

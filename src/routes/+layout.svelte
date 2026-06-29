@@ -1,6 +1,5 @@
 <script lang="ts">
 	import './layout.css';
-	import favicon from '$lib/assets/favicon.svg';
 	import { page } from '$app/state';
 	import { Toaster } from '$lib/components/ui/sonner';
 	import { DEFAULT_THEME_ID } from '$lib/themes';
@@ -34,7 +33,7 @@
 </script>
 
 <svelte:head>
-	<link rel="icon" href={favicon} />
+	<link rel="icon" href="/logo.png" type="image/png" />
 	<title>Solvo — subscription manager</title>
 </svelte:head>
 
@@ -43,9 +42,20 @@
 <div class="min-h-screen bg-background">
 	<header class="border-b">
 		<div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
-			<a href="/" class="flex items-baseline gap-2">
-				<span class="text-xl font-semibold tracking-tight">Solvo</span>
-				<span class="hidden text-sm text-muted-foreground sm:inline">own your subscriptions</span>
+			<a href="/" class="flex items-center gap-2.5">
+				<img
+					src="/logo.png"
+					alt="Solvo"
+					width="36"
+					height="36"
+					class="size-9 shrink-0 rounded"
+				/>
+				<div class="flex flex-col leading-tight">
+					<span class="text-xl font-semibold tracking-tight">Solvo</span>
+					<span class="hidden text-xs text-muted-foreground sm:inline">
+						own your subscriptions
+					</span>
+				</div>
 			</a>
 			<nav class="flex items-center gap-1">
 				{#each nav as item (item.href)}
