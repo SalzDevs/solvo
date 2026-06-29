@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { byCategory, convert, cycleDays, formatMoney, normalize, totals } from './cost';
+import { byCategory, bySubscription, convert, cycleDays, formatMoney, normalize, totals } from './cost';
 import type { Subscription } from './types';
 
 function sub(overrides: Partial<Subscription> = {}): Subscription {
@@ -111,6 +111,52 @@ describe('byCategory', () => {
 	it('labels missing categories as Uncategorized', () => {
 		const result = byCategory([sub({ category: null })], 'EUR', 1);
 		expect(result[0].category).toBe('Uncategorized');
+	});
+});
+
+describe('bySubscription', () => {
+	it('returns only active subscriptions in the requested category', () => {
+		const subs = [
+			sub({ id: 1, name: 'Spotify', category: 'Music', amount: 999 }),
+			sub({ id: 2, name: 'Apple Music', category: 'Music', amount: 1099 }),
+			sub({ id: 3, name: 'Netflix', category: 'Streaming', amount: 1599 }),
+			sub({ id: 4, name: 'Tidal', category: 'Music', amount: 999, status: 'cancelled' })
+		];
+		const result = bySubscription(subs, 'Music', 'EUR', 1);
+		expect(result).toHaveLength(2);
+		expect(result.map((r) => r.name)).toEqual(['Apple Music', 'Spotify']);
+	});
+
+	it('uses the id as a unique key, keeping duplicate names separate', () => {
+		const subs = [
+			sub({ id: 7, name: 'GitHub', category: 'Software', amount: 400 }),
+			sub({ id: 9, name: 'GitHub', category: 'Software', amount: 800 })
+		];
+		const result = bySubscription(subs, 'Software', 'EUR', 1);
+		expect(result).toHaveLength(2);
+		expect(result.map((r) => r.key)).toEqual(['9', '7']);
+	});
+
+	it('normalises missing category as Uncategorized to match byCategory', () => {
+		const subs = [sub({ id: 1, name: 'Misc', category: null })];
+		const result = bySubscription(subs, 'Uncategorized', 'EUR', 1);
+		expect(result).toHaveLength(1);
+		expect(result[0].name).toBe('Misc');
+	});
+
+	it('returns an empty array when no subscriptions match', () => {
+		expect(bySubscription([], 'Anything', 'EUR', 1)).toEqual([]);
+		expect(bySubscription([sub({ category: 'Music' })], 'Software', 'EUR', 1)).toEqual([]);
+	});
+
+	it('converts currency before summing per-month spend', () => {
+		const subs = [
+			sub({ id: 1, name: 'A', category: 'Tools', amount: 1000, currency: 'EUR' }),
+			sub({ id: 2, name: 'B', category: 'Tools', amount: 2000, currency: 'USD' })
+		];
+		const result = bySubscription(subs, 'Tools', 'EUR', 2);
+		// 1000 EUR + (2000 USD / 2) = 2000 EUR per month
+		expect(result.reduce((sum, r) => sum + r.perMonth, 0)).toBeCloseTo(2000, 6);
 	});
 });
 

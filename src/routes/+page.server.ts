@@ -16,6 +16,7 @@ export const load: PageServerLoad = async () => {
 
 	return {
 		settings,
+		subscriptions,
 		totals: totals(subscriptions, settings.displayCurrency, settings.fxEurToUsd),
 		categories: byCategory(subscriptions, settings.displayCurrency, settings.fxEurToUsd),
 		projection: monthlyProjection(subscriptions, settings.displayCurrency, settings.fxEurToUsd, 12),

@@ -4,9 +4,9 @@
 	import { Button } from '$lib/components/ui/button';
 	import BarChart from '$lib/components/charts/bar-chart.svelte';
 	import DonutChart from '$lib/components/charts/donut-chart.svelte';
-	import { formatMoney } from '$lib/cost';
+	import { bySubscription, formatMoney } from '$lib/cost';
 	import { renewalStatus, type RenewalTone } from '$lib/renewals';
-	import { CalendarClock, CircleDollarSign, Plus, TrendingDown } from '@lucide/svelte';
+	import { ArrowLeft, CalendarClock, CircleDollarSign, Plus, TrendingDown } from '@lucide/svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -37,6 +37,35 @@
 	const categoryData = $derived(
 		data.categories.map((c) => ({ key: c.category, label: c.category, value: c.perMonth }))
 	);
+
+	let selectedCategory = $state<string | null>(null);
+
+	const drilldownData = $derived(
+		selectedCategory
+			? bySubscription(
+					data.subscriptions ?? [],
+					selectedCategory,
+					data.settings.displayCurrency,
+					data.settings.fxEurToUsd
+				).map((s) => ({ key: s.key, label: s.name, value: s.perMonth }))
+			: null
+	);
+
+	const chartData = $derived(drilldownData ?? categoryData);
+	const chartTitle = $derived(
+		selectedCategory ? `Spend in ${selectedCategory}` : 'Spend by category'
+	);
+	const chartCenterLabel = $derived(selectedCategory ?? 'per month');
+	const chartDescription = $derived(
+		selectedCategory
+			? `Individual subscriptions in ${selectedCategory}, monthly`
+			: 'Monthly, active subscriptions only'
+	);
+
+	function onCategorySelect(key: string) {
+		// An empty key means the user clicked the already-selected slice — drill back out.
+		selectedCategory = key === '' ? null : key;
+	}
 
 	function formatDate(iso: string): string {
 		return new Date(iso).toLocaleDateString(undefined, {
@@ -117,11 +146,27 @@
 		<div class="grid gap-6 md:grid-cols-2">
 			<Card.Root>
 				<Card.Header>
-					<Card.Title>Spend by category</Card.Title>
-					<Card.Description>Monthly, active subscriptions only</Card.Description>
+					<div>
+						<Card.Title>{chartTitle}</Card.Title>
+						<Card.Description>{chartDescription}</Card.Description>
+					</div>
+					{#if selectedCategory}
+						<Card.Action>
+							<Button variant="ghost" size="sm" onclick={() => (selectedCategory = null)}>
+								<ArrowLeft class="size-4" />
+								All categories
+							</Button>
+						</Card.Action>
+					{/if}
 				</Card.Header>
 				<Card.Content>
-					<DonutChart data={categoryData} formatValue={money} centerLabel="per month" />
+					<DonutChart
+						data={chartData}
+						formatValue={money}
+						centerLabel={chartCenterLabel}
+						onSelect={selectedCategory ? undefined : onCategorySelect}
+						selected={selectedCategory}
+					/>
 				</Card.Content>
 			</Card.Root>
 

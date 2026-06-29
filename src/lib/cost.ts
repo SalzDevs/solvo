@@ -83,6 +83,13 @@ export interface CategoryTotal {
 	count: number;
 }
 
+export interface SubscriptionTotal {
+	/** Unique within a category (e.g. `${id}`) — used as a stable chart key. */
+	key: string;
+	name: string;
+	perMonth: number;
+}
+
 /** Per-category monthly spend, sorted descending. Active subscriptions only. */
 export function byCategory(
 	subs: Subscription[],
@@ -100,6 +107,32 @@ export function byCategory(
 		map.set(category, entry);
 	}
 	return [...map.values()].sort((a, b) => b.perMonth - a.perMonth);
+}
+
+/**
+ * Per-subscription monthly spend within a single category, used to drill
+ * down from a category-level donut to the individual apps inside it. Only
+ * active subscriptions are counted. Sums by subscription (not by name) so
+ * two instances of the same service stay distinct. Sorted descending.
+ *
+ * `category` must match the labels produced by `byCategory` (trimmed, with
+ * missing values treated as "Uncategorized").
+ */
+export function bySubscription(
+	subs: Subscription[],
+	category: string,
+	displayCurrency: Currency,
+	fxEurToUsd: number
+): SubscriptionTotal[] {
+	const items: SubscriptionTotal[] = [];
+	for (const s of subs) {
+		if (s.status !== 'active') continue;
+		const subCategory = s.category?.trim() || 'Uncategorized';
+		if (subCategory !== category) continue;
+		const n = normalize(s, displayCurrency, fxEurToUsd);
+		items.push({ key: String(s.id), name: s.name, perMonth: n.perMonth });
+	}
+	return items.sort((a, b) => b.perMonth - a.perMonth);
 }
 
 const CURRENCY_SYMBOL: Record<Currency, string> = { EUR: '€', USD: '$' };
