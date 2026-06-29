@@ -71,6 +71,25 @@ export function rollForward(
 	return current;
 }
 
+/**
+ * Default next-renewal date for a subscription, derived from its start date
+ * and billing cycle. Used to auto-populate the form: one cycle after the
+ * start date, rolled forward to the next future occurrence.
+ *
+ * Examples (assuming today is 2026-06-29):
+ *   nextRenewalFor('2026-06-29', 'monthly', 1)  -> '2026-07-29'
+ *   nextRenewalFor('2026-06-29', 'yearly',  1)  -> '2027-06-29'
+ *   nextRenewalFor('2024-01-15', 'yearly',  1)  -> '2027-01-15' (rolled past 2025 + 2026)
+ */
+export function nextRenewalFor(
+	start: string,
+	cycle: BillingCycle,
+	cycleCount: number,
+	from: string = today()
+): string {
+	return rollForward(addCycle(start, cycle, cycleCount), cycle, cycleCount, from);
+}
+
 /** Whole days from `from` (today) until the given ISO date. Negative if past. */
 export function daysUntil(iso: string, from: string = today()): number {
 	const ms = toUTCDate(iso).getTime() - toUTCDate(from).getTime();

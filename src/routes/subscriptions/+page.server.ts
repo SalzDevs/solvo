@@ -5,6 +5,7 @@ import {
 	createSubscription,
 	deleteSubscription,
 	getSettings,
+	getSubscription,
 	listSubscriptions,
 	reactivateSubscription,
 	syncRenewals,
@@ -85,6 +86,10 @@ function id(form: FormData): number | null {
 	return Number.isInteger(value) && value > 0 ? value : null;
 }
 
+function cancelConfirmationPhrase(name: string): string {
+	return `${name} canceled`;
+}
+
 export const actions: Actions = {
 	create: async ({ request }) => {
 		const form = await request.formData();
@@ -108,6 +113,18 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const subId = id(form);
 		if (!subId) return fail(400, { error: 'Missing subscription id.' });
+
+		const subscription = getSubscription(subId);
+		if (!subscription) return fail(404, { error: 'Subscription not found.' });
+
+		const confirmation = str(form, 'confirmation');
+		const expected = cancelConfirmationPhrase(subscription.name);
+		if (confirmation.toLowerCase() !== expected.toLowerCase()) {
+			return fail(400, {
+				error: `Type "${expected}" to confirm you cancelled with the provider.`
+			});
+		}
+
 		cancelSubscription(subId);
 		return { success: true };
 	},

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { addCycle, daysUntil, renewalStatus, rollForward } from './renewals';
+import { addCycle, daysUntil, nextRenewalFor, renewalStatus, rollForward } from './renewals';
 
 describe('addCycle', () => {
 	it('adds days and weeks', () => {
@@ -34,6 +34,32 @@ describe('rollForward', () => {
 
 	it('rolls yearly subscriptions across multiple years', () => {
 		expect(rollForward('2020-02-29', 'yearly', 1, '2026-06-01')).toBe('2027-02-28');
+	});
+});
+
+describe('nextRenewalFor', () => {
+	const FROM = '2026-06-29';
+
+	it('advances by one cycle when the start date is today', () => {
+		expect(nextRenewalFor('2026-06-29', 'monthly', 1, FROM)).toBe('2026-07-29');
+		expect(nextRenewalFor('2026-06-29', 'yearly', 1, FROM)).toBe('2027-06-29');
+	});
+
+	it('rolls a past start date forward to the next future cycle', () => {
+		// Yearly sub started Jan 2024, two cycles (2025, 2026) are already past.
+		expect(nextRenewalFor('2024-01-15', 'yearly', 1, FROM)).toBe('2027-01-15');
+	});
+
+	it('respects multi-cycle counts (e.g. every 3 months)', () => {
+		// Quarterly-ish: cycle=monthly, count=3 -> every 3 months.
+		expect(nextRenewalFor('2026-01-10', 'monthly', 3, FROM)).toBe('2026-07-10');
+	});
+
+	it('handles short cycles', () => {
+		// Daily sub starting today: first charge is today, next is tomorrow.
+		expect(nextRenewalFor('2026-06-29', 'daily', 1, FROM)).toBe('2026-06-30');
+		// Weekly sub starting in the past: next charge is the first future cycle.
+		expect(nextRenewalFor('2026-06-25', 'weekly', 1, FROM)).toBe('2026-07-02');
 	});
 });
 

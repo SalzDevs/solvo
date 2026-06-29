@@ -11,10 +11,10 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { formatMoney, normalize } from '$lib/cost';
-	import { renewalStatus, type RenewalTone } from '$lib/renewals';
+	import { nextRenewalFor, renewalStatus, type RenewalTone } from '$lib/renewals';
 	import { findProvider } from '$lib/registry';
-	import { BILLING_CYCLES, CURRENCIES, type Subscription } from '$lib/types';
-	import { ExternalLink, Pencil, Plus, RotateCcw, Trash2, XCircle } from '@lucide/svelte';
+	import { BILLING_CYCLES, CURRENCIES, type BillingCycle, type Subscription } from '$lib/types';
+	import { ExternalLink, AlertCircle, CheckCircle2, Pencil, Plus, RotateCcw, Trash2, XCircle } from '@lucide/svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -59,8 +59,36 @@
 	let form = $state<FormState>(emptyForm());
 	const isEditing = $derived(form.id !== null);
 
+	// Auto-populate nextRenewal from startDate + cycle when the user hasn't
+	// typed one in. Once nextRenewal is set, the effect short-circuits and the
+	// user owns the field, so editing an existing sub preserves its date.
+	$effect(() => {
+		const start = form.startDate;
+		const cycle = form.cycle;
+		const count = Number(form.cycleCount) || 1;
+		const next = form.nextRenewal;
+		if (next) return;
+		if (!start) return;
+		if (!(BILLING_CYCLES as readonly string[]).includes(cycle)) return;
+		form.nextRenewal = nextRenewalFor(start, cycle as BillingCycle, count);
+	});
+
 	let deleteOpen = $state(false);
 	let pendingDelete = $state<Subscription | null>(null);
+
+	let cancelOpen = $state(false);
+	let pendingCancel = $state<Subscription | null>(null);
+	let cancelConfirmation = $state('');
+	let cancelConfirmationError = $state<string | null>(null);
+
+	const cancelPhrase = $derived(
+		pendingCancel ? `${pendingCancel.name} canceled` : ''
+	);
+	const cancelHasInput = $derived(cancelConfirmation.trim().length > 0);
+	const cancelConfirmed = $derived(
+		cancelPhrase !== '' && cancelConfirmation.trim().toLowerCase() === cancelPhrase.toLowerCase()
+	);
+	const cancelInputInvalid = $derived(cancelHasInput && !cancelConfirmed);
 
 	const toneClass: Record<RenewalTone, string> = {
 		overdue: 'text-destructive',
@@ -124,12 +152,32 @@
 		return 'secondary';
 	}
 
-	function startCancel(sub: Subscription) {
+	function openCancelPage(sub: Subscription) {
 		if (sub.cancelUrl) {
 			window.open(sub.cancelUrl, '_blank', 'noopener,noreferrer');
 		} else if (sub.cancelNotes) {
 			toast.info(`How to cancel ${sub.name}`, { description: sub.cancelNotes, duration: 8000 });
 		}
+	}
+
+	function confirmCancel(sub: Subscription) {
+		pendingCancel = sub;
+		cancelConfirmation = '';
+		cancelConfirmationError = null;
+		cancelOpen = true;
+		openCancelPage(sub);
+	}
+
+	function onCancelConfirmationInput() {
+		cancelConfirmationError = null;
+	}
+
+	function blockInvalidCancelSubmit(event: SubmitEvent) {
+		if (cancelConfirmed) return;
+		event.preventDefault();
+		cancelConfirmationError = cancelHasInput
+			? `That doesn't match. Type exactly: ${cancelPhrase}`
+			: `Type ${cancelPhrase} to confirm you cancelled with the provider.`;
 	}
 </script>
 
@@ -206,35 +254,20 @@
 										</Button>
 
 										{#if sub.status === 'active'}
-											<form
-												method="POST"
-												action="?/cancel"
-												use:enhance={() => {
-													return async ({ result, update }) => {
-														await update({ reset: false });
-														if (result.type === 'success') {
-															toast.success(`Cancelled ${sub.name}`);
-															await invalidateAll();
-														}
-													};
-												}}
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon"
+												title="Cancel subscription"
+												class="text-destructive hover:text-destructive"
+												onclick={() => confirmCancel(sub)}
 											>
-												<input type="hidden" name="id" value={sub.id} />
-												<Button
-													type="submit"
-													variant="ghost"
-													size="icon"
-													title="Cancel subscription"
-													class="text-destructive hover:text-destructive"
-													onclick={() => startCancel(sub)}
-												>
-													{#if sub.cancelUrl}
-														<ExternalLink class="size-4" />
-													{:else}
-														<XCircle class="size-4" />
-													{/if}
-												</Button>
-											</form>
+												{#if sub.cancelUrl}
+													<ExternalLink class="size-4" />
+												{:else}
+													<XCircle class="size-4" />
+												{/if}
+											</Button>
 										{:else}
 											<form
 												method="POST"
@@ -432,6 +465,115 @@
 		</form>
 	</Dialog.Content>
 </Dialog.Root>
+
+<AlertDialog.Root
+	bind:open={cancelOpen}
+	onOpenChange={(open) => {
+		if (!open) {
+			pendingCancel = null;
+			cancelConfirmation = '';
+			cancelConfirmationError = null;
+		}
+	}}
+>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>Mark as cancelled?</AlertDialog.Title>
+			<AlertDialog.Description>
+				{#if pendingCancel?.cancelUrl}
+					We opened the provider's cancellation page in a new tab. Finish cancelling there, then
+					confirm below so Solvo stops counting <strong>{pendingCancel.name}</strong> in your
+					totals.
+				{:else if pendingCancel?.cancelNotes}
+					Cancel <strong>{pendingCancel?.name}</strong> with the provider first
+					({pendingCancel.cancelNotes}), then confirm below.
+				{:else}
+					Cancel <strong>{pendingCancel?.name}</strong> with the provider first, then confirm below
+					so Solvo stops counting it in your totals.
+				{/if}
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+
+		{#if pendingCancel?.cancelUrl}
+			<Button type="button" variant="outline" class="w-full" onclick={() => openCancelPage(pendingCancel!)}>
+				<ExternalLink class="size-4" />
+				Open cancellation page
+			</Button>
+		{/if}
+
+		<div class="grid gap-2">
+			<Label for="cancelConfirmation">
+				Type <span class="font-mono text-foreground">{cancelPhrase}</span> to confirm
+			</Label>
+			<Input
+				id="cancelConfirmation"
+				autocomplete="off"
+				placeholder={cancelPhrase}
+				bind:value={cancelConfirmation}
+				aria-invalid={cancelInputInvalid || cancelConfirmationError !== null}
+				aria-describedby="cancelConfirmationHelp"
+				oninput={onCancelConfirmationInput}
+			/>
+			<div id="cancelConfirmationHelp" class="text-sm">
+				{#if cancelConfirmed}
+					<p class="flex items-start gap-2 text-emerald-600 dark:text-emerald-500">
+						<CheckCircle2 class="mt-0.5 size-4 shrink-0" />
+						<span>Phrase matches — you can mark this subscription as cancelled.</span>
+					</p>
+				{:else if cancelInputInvalid || cancelConfirmationError}
+					<p class="flex items-start gap-2 text-destructive">
+						<AlertCircle class="mt-0.5 size-4 shrink-0" />
+						<span>
+							{cancelConfirmationError ??
+								`That doesn't match. Type exactly: ${cancelPhrase}`}
+						</span>
+					</p>
+				{:else}
+					<p class="text-muted-foreground">
+						Copy the phrase above exactly, including the word <span class="font-mono">canceled</span>.
+					</p>
+				{/if}
+			</div>
+		</div>
+
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel>Not yet</AlertDialog.Cancel>
+			<form
+				method="POST"
+				action="?/cancel"
+				onsubmit={blockInvalidCancelSubmit}
+				use:enhance={() => {
+					const name = pendingCancel?.name;
+					return async ({ result, update }) => {
+						await update({ reset: false });
+						if (result.type === 'success') {
+							toast.success(`Marked ${name} as cancelled`);
+							cancelOpen = false;
+							pendingCancel = null;
+							cancelConfirmation = '';
+							cancelConfirmationError = null;
+							await invalidateAll();
+						} else if (result.type === 'failure') {
+							cancelConfirmationError = String(
+								result.data?.error ?? 'Could not mark as cancelled.'
+							);
+						}
+					};
+				}}
+			>
+				<input type="hidden" name="id" value={pendingCancel?.id} />
+				<input type="hidden" name="confirmation" value={cancelConfirmation} />
+				<AlertDialog.Action
+					type="submit"
+					class={buttonVariants({ variant: 'destructive' })}
+					disabled={!cancelConfirmed}
+				>
+					Mark as cancelled
+				</AlertDialog.Action>
+			</form>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
 
 <AlertDialog.Root bind:open={deleteOpen}>
 	<AlertDialog.Content>
