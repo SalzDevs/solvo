@@ -1,8 +1,37 @@
-import type { Settings, Subscription, SubscriptionInput } from '$lib/types';
+import { rollForward, today } from '$lib/renewals';
+import type { BillingCycle, Settings, Subscription, SubscriptionInput } from '$lib/types';
 import { getDb, rowToSubscription, type SubscriptionRow } from './db';
 
 function now(): string {
 	return new Date().toISOString();
+}
+
+/**
+ * Roll any active subscription whose next renewal has passed forward to its next
+ * future occurrence, so the "next charge" stays accurate over time. Idempotent.
+ */
+export function syncRenewals(): void {
+	const db = getDb();
+	const rows = db
+		.query(
+			`SELECT id, next_renewal, cycle, cycle_count FROM subscriptions
+			 WHERE status = 'active' AND next_renewal IS NOT NULL AND next_renewal < $today`
+		)
+		.all({ $today: today() }) as {
+		id: number;
+		next_renewal: string;
+		cycle: string;
+		cycle_count: number;
+	}[];
+	if (rows.length === 0) return;
+	const update = db.query('UPDATE subscriptions SET next_renewal = $next WHERE id = $id');
+	const tx = db.transaction(() => {
+		for (const r of rows) {
+			const next = rollForward(r.next_renewal, r.cycle as BillingCycle, r.cycle_count, today());
+			update.run({ $id: r.id, $next: next });
+		}
+	});
+	tx();
 }
 
 export function listSubscriptions(): Subscription[] {

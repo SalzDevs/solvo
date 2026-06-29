@@ -3,6 +3,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { formatMoney } from '$lib/cost';
+	import { renewalStatus, type RenewalTone } from '$lib/renewals';
 	import { CalendarClock, CircleDollarSign, Plus, TrendingDown } from '@lucide/svelte';
 	import type { PageData } from './$types';
 
@@ -31,6 +32,13 @@
 			year: 'numeric'
 		});
 	}
+
+	const toneClass: Record<RenewalTone, string> = {
+		overdue: 'text-destructive',
+		due: 'text-destructive',
+		soon: 'text-amber-600 dark:text-amber-500',
+		later: 'text-muted-foreground'
+	};
 </script>
 
 <div class="space-y-8">
@@ -123,10 +131,13 @@
 						</p>
 					{:else}
 						{#each data.upcoming as s (s.id)}
+							{@const status = renewalStatus(s.nextRenewal!)}
 							<div class="flex items-center justify-between rounded-md border px-3 py-2">
 								<div>
 									<p class="text-sm font-medium">{s.name}</p>
-									<p class="text-xs text-muted-foreground">{formatDate(s.nextRenewal!)}</p>
+									<p class="text-xs {toneClass[status.tone]}">
+										{formatDate(s.nextRenewal!)} · {status.label}
+									</p>
 								</div>
 								<Badge variant="secondary">{formatMoney(s.amount, s.currency)}</Badge>
 							</div>

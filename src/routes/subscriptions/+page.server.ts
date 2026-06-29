@@ -7,6 +7,7 @@ import {
 	getSettings,
 	listSubscriptions,
 	reactivateSubscription,
+	syncRenewals,
 	updateSubscription
 } from '$lib/server/subscriptions';
 import {
@@ -20,6 +21,7 @@ import {
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
+	syncRenewals();
 	return {
 		subscriptions: listSubscriptions(),
 		settings: getSettings(),

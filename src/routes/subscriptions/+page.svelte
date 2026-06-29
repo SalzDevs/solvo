@@ -2,14 +2,16 @@
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Table from '$lib/components/ui/table';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
+	import { Button, buttonVariants } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { formatMoney, normalize } from '$lib/cost';
+	import { renewalStatus, type RenewalTone } from '$lib/renewals';
 	import { findProvider } from '$lib/registry';
 	import { BILLING_CYCLES, CURRENCIES, type Subscription } from '$lib/types';
 	import { ExternalLink, Pencil, Plus, RotateCcw, Trash2, XCircle } from '@lucide/svelte';
@@ -56,6 +58,21 @@
 	let dialogOpen = $state(false);
 	let form = $state<FormState>(emptyForm());
 	const isEditing = $derived(form.id !== null);
+
+	let deleteOpen = $state(false);
+	let pendingDelete = $state<Subscription | null>(null);
+
+	const toneClass: Record<RenewalTone, string> = {
+		overdue: 'text-destructive',
+		due: 'text-destructive',
+		soon: 'text-amber-600 dark:text-amber-500',
+		later: 'text-muted-foreground'
+	};
+
+	function confirmDelete(sub: Subscription) {
+		pendingDelete = sub;
+		deleteOpen = true;
+	}
 
 	const selectClass =
 		'border-input bg-background ring-offset-background focus-visible:ring-ring flex h-9 w-full rounded-md border px-3 py-1 text-sm shadow-xs focus-visible:ring-1 focus-visible:outline-none';
@@ -162,14 +179,22 @@
 								<Table.Cell class="text-right font-medium">
 									{sub.status === 'active' ? monthly(sub) : '—'}
 								</Table.Cell>
-								<Table.Cell class="text-sm text-muted-foreground">
-									{sub.nextRenewal
-										? new Date(sub.nextRenewal).toLocaleDateString(undefined, {
+								<Table.Cell class="text-sm">
+									{#if sub.nextRenewal}
+										{@const status = renewalStatus(sub.nextRenewal)}
+										<div class="text-muted-foreground">
+											{new Date(sub.nextRenewal).toLocaleDateString(undefined, {
 												day: 'numeric',
 												month: 'short',
 												year: 'numeric'
-											})
-										: '—'}
+											})}
+										</div>
+										{#if sub.status === 'active'}
+											<div class="text-xs {toneClass[status.tone]}">{status.label}</div>
+										{/if}
+									{:else}
+										<span class="text-muted-foreground">—</span>
+									{/if}
 								</Table.Cell>
 								<Table.Cell>
 									<Badge variant={statusVariant(sub.status)}>{sub.status}</Badge>
@@ -231,30 +256,15 @@
 											</form>
 										{/if}
 
-										<form
-											method="POST"
-											action="?/remove"
-											use:enhance={() => {
-												return async ({ result, update }) => {
-													await update({ reset: false });
-													if (result.type === 'success') {
-														toast.success(`Deleted ${sub.name}`);
-														await invalidateAll();
-													}
-												};
-											}}
+										<Button
+											variant="ghost"
+											size="icon"
+											title="Delete"
+											class="text-muted-foreground hover:text-destructive"
+											onclick={() => confirmDelete(sub)}
 										>
-											<input type="hidden" name="id" value={sub.id} />
-											<Button
-												type="submit"
-												variant="ghost"
-												size="icon"
-												title="Delete"
-												class="text-muted-foreground hover:text-destructive"
-											>
-												<Trash2 class="size-4" />
-											</Button>
-										</form>
+											<Trash2 class="size-4" />
+										</Button>
 									</div>
 								</Table.Cell>
 							</Table.Row>
@@ -422,3 +432,39 @@
 		</form>
 	</Dialog.Content>
 </Dialog.Root>
+
+<AlertDialog.Root bind:open={deleteOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>Delete subscription?</AlertDialog.Title>
+			<AlertDialog.Description>
+				This permanently removes <strong>{pendingDelete?.name}</strong> from Solvo. This can't be
+				undone. To stop paying without losing the record, cancel it instead.
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel>Keep it</AlertDialog.Cancel>
+			<form
+				method="POST"
+				action="?/remove"
+				use:enhance={() => {
+					const name = pendingDelete?.name;
+					return async ({ result, update }) => {
+						await update({ reset: false });
+						if (result.type === 'success') {
+							toast.success(`Deleted ${name}`);
+							await invalidateAll();
+						}
+						deleteOpen = false;
+						pendingDelete = null;
+					};
+				}}
+			>
+				<input type="hidden" name="id" value={pendingDelete?.id} />
+				<AlertDialog.Action type="submit" class={buttonVariants({ variant: 'destructive' })}>
+					Delete
+				</AlertDialog.Action>
+			</form>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>

@@ -1,8 +1,9 @@
 import { byCategory, totals } from '$lib/cost';
-import { getSettings, listSubscriptions } from '$lib/server/subscriptions';
+import { getSettings, listSubscriptions, syncRenewals } from '$lib/server/subscriptions';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
+	syncRenewals();
 	const subscriptions = listSubscriptions();
 	const settings = getSettings();
 	const active = subscriptions.filter((s) => s.status === 'active');

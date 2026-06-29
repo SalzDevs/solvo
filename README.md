@@ -33,6 +33,24 @@ Then open the printed URL (default http://localhost:5173).
 
 The database is created automatically as `solvo.db` in the project root. Set the `SOLVO_DB` environment variable to store it elsewhere.
 
+### Demo mode
+
+Want to explore Solvo with sample data without touching your real database?
+
+```bash
+bun run demo
+```
+
+This boots against a throwaway in-memory database seeded with example subscriptions (varied currencies, billing cycles, and renewal dates). Nothing is persisted.
+
+### Tests
+
+The pure cost and renewal logic is unit-tested with `bun test`:
+
+```bash
+bun test
+```
+
 ### Production build
 
 ```bash
@@ -61,7 +79,7 @@ src/
 
 - CSV / bank statement import
 - Live exchange-rate refresh
-- Renewal reminders & notifications
+- Renewal reminders & notifications (auto-advancing dates and urgency badges are already in)
 - Spending trends and charts
 
 ## License

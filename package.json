@@ -5,8 +5,10 @@
 	"type": "module",
 	"scripts": {
 		"dev": "bun --bun vite dev",
+		"demo": "SOLVO_DEMO=1 bun --bun vite dev",
 		"build": "bun --bun vite build",
 		"preview": "bun --bun vite preview",
+		"test": "bun test src/lib",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
