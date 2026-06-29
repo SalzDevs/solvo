@@ -52,17 +52,6 @@ function migrate(database: Database): void {
 			key   TEXT PRIMARY KEY,
 			value TEXT NOT NULL
 		);
-
-		CREATE TABLE IF NOT EXISTS cancellation_runs (
-			id              TEXT PRIMARY KEY,
-			subscription_id INTEGER NOT NULL,
-			recipe_id       TEXT NOT NULL,
-			status          TEXT NOT NULL,
-			error           TEXT,
-			screenshot      TEXT,
-			created_at      TEXT NOT NULL,
-			updated_at      TEXT NOT NULL
-		);
 	`);
 }
 

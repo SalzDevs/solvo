@@ -1,5 +1,4 @@
 import { fail } from '@sveltejs/kit';
-import { recipeIdForName } from '$lib/server/cancellation';
 import { REGISTRY } from '$lib/registry';
 import {
 	cancelSubscription,
@@ -23,17 +22,10 @@ import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
 	syncRenewals();
-	const subscriptions = listSubscriptions();
-	const autoCancel: Record<number, string> = {};
-	for (const sub of subscriptions) {
-		const recipeId = recipeIdForName(sub.name);
-		if (recipeId) autoCancel[sub.id] = recipeId;
-	}
 	return {
-		subscriptions,
+		subscriptions: listSubscriptions(),
 		settings: getSettings(),
-		registry: REGISTRY,
-		autoCancel
+		registry: REGISTRY
 	};
 };
 
