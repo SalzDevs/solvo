@@ -37,6 +37,20 @@
 	let themeForm: HTMLFormElement | undefined = $state();
 	let themeSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
+	// Sync the local selection from server data when it changes — most
+	// importantly after `invalidateAll()` following an import, where the
+	// theme is applied by the layout's $effect but the radio card would
+	// otherwise still be pointing at the previous selection. For the
+	// user-clicks-a-card case, selectedTheme was just updated by
+	// bind:group to match the server, so the equality check makes this a
+	// no-op and we don't fight the user's input.
+	$effect(() => {
+		const serverTheme = getTheme(data.settings.theme).id;
+		if (selectedTheme !== serverTheme) {
+			selectedTheme = serverTheme;
+		}
+	});
+
 	function applyTheme(themeId: string): void {
 		if (themeId === DEFAULT_THEME_ID) {
 			document.documentElement.removeAttribute('data-theme');
@@ -64,6 +78,22 @@
 	let fxEurToUsd = $state<number>(untrack(() => data.settings.fxEurToUsd));
 	let settingsForm: HTMLFormElement | undefined = $state();
 	let currencySaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+	// Same sync pattern as the theme: after import (or any other data
+	// refresh), mirror the server values into the local form state. Safe
+	// for the debounced-save case because the save only completes after
+	// the user stops editing, by which point the local values already
+	// match the server ones.
+	$effect(() => {
+		if (displayCurrency !== data.settings.displayCurrency) {
+			displayCurrency = data.settings.displayCurrency;
+		}
+	});
+	$effect(() => {
+		if (fxEurToUsd !== data.settings.fxEurToUsd) {
+			fxEurToUsd = data.settings.fxEurToUsd;
+		}
+	});
 
 	function onSettingsChange(): void {
 		if (currencySaveTimer !== null) clearTimeout(currencySaveTimer);
