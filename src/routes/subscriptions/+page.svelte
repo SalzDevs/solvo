@@ -59,16 +59,22 @@
 	let form = $state<FormState>(emptyForm());
 	const isEditing = $derived(form.id !== null);
 
-	// Auto-populate nextRenewal from startDate + cycle when the user hasn't
-	// typed one in. Once nextRenewal is set, the effect short-circuits and the
-	// user owns the field, so editing an existing sub preserves its date.
+	// nextRenewal is a derived field — it always reflects the current
+	// startDate + cycle + cycleCount, live ("hot reload"). The user can
+	// still type a manual override and that value sticks while they're
+	// editing, but any change to the upstream inputs re-derives it.
+	//
+	// We deliberately do NOT read form.nextRenewal inside the effect:
+	// reading it would create a write/read cycle and the effect would
+	// never settle. Only startDate, cycle, and cycleCount are tracked.
 	$effect(() => {
 		const start = form.startDate;
 		const cycle = form.cycle;
 		const count = Number(form.cycleCount) || 1;
-		const next = form.nextRenewal;
-		if (next) return;
-		if (!start) return;
+		if (!start) {
+			form.nextRenewal = '';
+			return;
+		}
 		if (!(BILLING_CYCLES as readonly string[]).includes(cycle)) return;
 		form.nextRenewal = nextRenewalFor(start, cycle as BillingCycle, count);
 	});
