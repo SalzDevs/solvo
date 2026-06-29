@@ -1,5 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import { REGISTRY } from '$lib/registry';
+import { today } from '$lib/renewals';
 import {
 	cancelSubscription,
 	createSubscription,
@@ -76,7 +77,13 @@ function parseInput(form: FormData): ParseResult {
 			status,
 			cancelUrl: optional(form, 'cancelUrl'),
 			cancelNotes: optional(form, 'cancelNotes'),
-			notes: optional(form, 'notes')
+			notes: optional(form, 'notes'),
+			// Trial fields are preserved across edits via hidden inputs on the
+			// form (see +page.svelte), so we just round-trip them here. New
+			// subs default to "not a trial"; the trial is set later via the
+			// dedicated ?/startTrial action.
+			isTrial: str(form, 'isTrial') === '1',
+			trialEndsOn: optional(form, 'trialEndsOn')
 		}
 	};
 }
@@ -142,6 +149,49 @@ export const actions: Actions = {
 		const subId = id(form);
 		if (!subId) return fail(400, { error: 'Missing subscription id.' });
 		deleteSubscription(subId);
+		return { success: true };
+	},
+
+	startTrial: async ({ request }) => {
+		const form = await request.formData();
+		const subId = id(form);
+		if (!subId) return fail(400, { error: 'Missing subscription id.' });
+
+		const subscription = getSubscription(subId);
+		if (!subscription) return fail(404, { error: 'Subscription not found.' });
+		if (subscription.status !== 'active') {
+			return fail(400, { error: 'Only active subscriptions can start a trial.' });
+		}
+		if (subscription.isTrial) {
+			return fail(400, { error: 'This subscription is already in a trial.' });
+		}
+
+		const trialEndsOn = str(form, 'trialEndsOn');
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(trialEndsOn)) {
+			return fail(400, { error: 'Pick a valid trial end date.' });
+		}
+		if (trialEndsOn <= today()) {
+			return fail(400, { error: 'Trial end date must be in the future.' });
+		}
+
+		updateSubscription(subId, {
+			...subscription,
+			isTrial: true,
+			trialEndsOn
+		});
+		return { success: true, trialEndsOn };
+	},
+
+	cancelTrial: async ({ request }) => {
+		// Lightweight cancel used by the in-trial "Cancel trial" button. Unlike
+		// the regular cancel action it skips the phrase confirmation: the user
+		// already confirmed intent by clicking the dedicated trial button.
+		const form = await request.formData();
+		const subId = id(form);
+		if (!subId) return fail(400, { error: 'Missing subscription id.' });
+		const sub = getSubscription(subId);
+		if (!sub) return fail(404, { error: 'Subscription not found.' });
+		cancelSubscription(subId);
 		return { success: true };
 	}
 };

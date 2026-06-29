@@ -18,6 +18,8 @@ function sub(overrides: Partial<Subscription> = {}): Subscription {
 		cancelNotes: null,
 		cancelledAt: null,
 		notes: null,
+		isTrial: false,
+		trialEndsOn: null,
 		createdAt: '2026-01-01T00:00:00.000Z',
 		updatedAt: '2026-01-01T00:00:00.000Z',
 		...overrides

@@ -45,6 +45,8 @@ function migrate(database: Database): void {
 			cancel_notes TEXT,
 			cancelled_at TEXT,
 			notes        TEXT,
+			is_trial      INTEGER NOT NULL DEFAULT 0,
+			trial_ends_on TEXT,
 			created_at   TEXT NOT NULL,
 			updated_at   TEXT NOT NULL
 		);
@@ -54,6 +56,20 @@ function migrate(database: Database): void {
 			value TEXT NOT NULL
 		);
 	`);
+
+	// Additive migrations for self-hosted installs created before the trial
+	// columns existed. SQLite has no "ADD COLUMN IF NOT EXISTS" on the versions
+	// we target, so we try and silently ignore the "duplicate column" error.
+	for (const stmt of [
+		'ALTER TABLE subscriptions ADD COLUMN is_trial INTEGER NOT NULL DEFAULT 0',
+		'ALTER TABLE subscriptions ADD COLUMN trial_ends_on TEXT'
+	]) {
+		try {
+			database.exec(stmt);
+		} catch {
+			// Column already exists — nothing to do.
+		}
+	}
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -89,6 +105,8 @@ interface DemoSeed {
 	status?: string;
 	cancelUrl?: string;
 	cancelNotes?: string;
+	/** When set, the demo seed is a trial that ends this many days from today. */
+	trialEndsIn?: number;
 }
 
 const DEMO_SUBS: DemoSeed[] = [
@@ -99,7 +117,8 @@ const DEMO_SUBS: DemoSeed[] = [
 	{ name: 'Adobe Creative Cloud', category: 'Software', amount: 5999, currency: 'EUR', cycle: 'monthly', cycleCount: 1, renewalOffset: 21, cancelUrl: 'https://account.adobe.com/plans' },
 	{ name: 'PlayStation Plus', category: 'Gaming', amount: 6999, currency: 'USD', cycle: 'yearly', cycleCount: 1, renewalOffset: 45, cancelUrl: 'https://www.playstation.com/account/' },
 	{ name: 'Amazon Prime', category: 'Shopping', amount: 4990, currency: 'EUR', cycle: 'yearly', cycleCount: 1, renewalOffset: 70, cancelUrl: 'https://www.amazon.com/gp/primecentral' },
-	{ name: 'Disney+', category: 'Streaming', amount: 899, currency: 'USD', cycle: 'monthly', cycleCount: 1, renewalOffset: 9, status: 'cancelled', cancelUrl: 'https://www.disneyplus.com/account/subscription' }
+	{ name: 'Disney+', category: 'Streaming', amount: 899, currency: 'USD', cycle: 'monthly', cycleCount: 1, renewalOffset: 9, status: 'cancelled', cancelUrl: 'https://www.disneyplus.com/account/subscription' },
+	{ name: 'Linear', category: 'Software', amount: 1000, currency: 'USD', cycle: 'monthly', cycleCount: 1, renewalOffset: 14, trialEndsIn: 5, cancelUrl: 'https://linear.app/settings/billing' }
 ];
 
 function seedDemo(database: Database): void {
@@ -109,12 +128,15 @@ function seedDemo(database: Database): void {
 	const insert = database.query(
 		`INSERT INTO subscriptions
 			(name, category, amount, currency, cycle, cycle_count, start_date, next_renewal,
-			 status, cancel_url, cancel_notes, notes, created_at, updated_at)
+			 status, cancel_url, cancel_notes, notes,
+			 is_trial, trial_ends_on, created_at, updated_at)
 		 VALUES
 			($name, $category, $amount, $currency, $cycle, $cycleCount, $startDate, $nextRenewal,
-			 $status, $cancelUrl, $cancelNotes, NULL, $createdAt, $updatedAt)`
+			 $status, $cancelUrl, $cancelNotes, NULL,
+			 $isTrial, $trialEndsOn, $createdAt, $updatedAt)`
 	);
 	for (const s of DEMO_SUBS) {
+		const trialEndsOn = s.trialEndsIn !== undefined ? dateOffset(s.trialEndsIn) : null;
 		insert.run({
 			$name: s.name,
 			$category: s.category,
@@ -127,6 +149,8 @@ function seedDemo(database: Database): void {
 			$status: s.status ?? 'active',
 			$cancelUrl: s.cancelUrl ?? null,
 			$cancelNotes: s.cancelNotes ?? null,
+			$isTrial: trialEndsOn !== null ? 1 : 0,
+			$trialEndsOn: trialEndsOn,
 			$createdAt: timestamp,
 			$updatedAt: timestamp
 		});
@@ -149,6 +173,8 @@ export interface SubscriptionRow {
 	cancel_notes: string | null;
 	cancelled_at: string | null;
 	notes: string | null;
+	is_trial: number;
+	trial_ends_on: string | null;
 	created_at: string;
 	updated_at: string;
 }
@@ -169,6 +195,8 @@ export function rowToSubscription(row: SubscriptionRow): Subscription {
 		cancelNotes: row.cancel_notes,
 		cancelledAt: row.cancelled_at,
 		notes: row.notes,
+		isTrial: row.is_trial === 1,
+		trialEndsOn: row.trial_ends_on,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at
 	};

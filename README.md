@@ -9,6 +9,7 @@ Solvo helps you **see every subscription you pay for**, understand **what it act
 - **Subscription ledger** — track name, price, currency, billing cycle, next renewal, category, and status.
 - **Honest cost math** — every subscription is normalized to a per-day rate (using average period lengths) and rolled up into per-day / per-month / per-year totals.
 - **Dual currency** — store subscriptions in EUR or USD; the dashboard converts everything into your chosen display currency using an editable, offline-friendly exchange rate.
+- **Trial tracking** — mark a subscription as a free trial with an end date. The row shows how many days are left, and on the end date the trial auto-converts to a paid subscription unless you cancel it.
 - **Assisted cancel** — one click opens the provider's official cancellation page (or shows the steps), then marks the subscription cancelled so it drops out of your totals. A bundled registry auto-fills cancellation links for popular services.
 - **Local & private** — all data lives in a single SQLite file on your machine. Export/import JSON backups any time.
 
@@ -80,7 +81,9 @@ src/
 - CSV / bank statement import
 - Live exchange-rate refresh
 - Renewal reminders & notifications (auto-advancing dates and urgency badges are already in)
+- Dashboard surfacing of "Trials ending soon" so the trial feature is more discoverable
 - ~~Spending trends and charts~~ — done: 12-month projection + category donut on the dashboard
+- ~~Trial tracking~~ — done: per-row Trial button + auto-conversion on the end date
 
 ## License
 

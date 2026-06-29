@@ -11,10 +11,10 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { formatMoney, normalize } from '$lib/cost';
-	import { nextRenewalFor, renewalStatus, type RenewalTone } from '$lib/renewals';
+	import { daysUntil, nextRenewalFor, renewalStatus, type RenewalTone } from '$lib/renewals';
 	import { findProvider } from '$lib/registry';
 	import { BILLING_CYCLES, CURRENCIES, type BillingCycle, type Subscription } from '$lib/types';
-	import { ExternalLink, AlertCircle, CheckCircle2, Pencil, Plus, RotateCcw, Trash2, XCircle } from '@lucide/svelte';
+	import { ExternalLink, AlertCircle, CheckCircle2, Clock, ClockAlert, Pencil, Plus, RotateCcw, Trash2, XCircle } from '@lucide/svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -35,6 +35,10 @@
 		cancelNotes: string;
 		notes: string;
 		status: string;
+		/** '1' when the subscription is in a trial, '0' otherwise. Sent as a
+		 *  hidden input so an edit doesn't accidentally wipe a trial. */
+		isTrial: string;
+		trialEndsOn: string;
 	};
 
 	function emptyForm(): FormState {
@@ -51,7 +55,9 @@
 			cancelUrl: '',
 			cancelNotes: '',
 			notes: '',
-			status: 'active'
+			status: 'active',
+			isTrial: '0',
+			trialEndsOn: ''
 		};
 	}
 
@@ -86,6 +92,10 @@
 	let pendingCancel = $state<Subscription | null>(null);
 	let cancelConfirmation = $state('');
 	let cancelConfirmationError = $state<string | null>(null);
+
+	let trialDialogOpen = $state(false);
+	let pendingTrialSub = $state<Subscription | null>(null);
+	let trialEndsOn = $state('');
 
 	const cancelPhrase = $derived(
 		pendingCancel ? `${pendingCancel.name} canceled` : ''
@@ -130,7 +140,9 @@
 			cancelUrl: sub.cancelUrl ?? '',
 			cancelNotes: sub.cancelNotes ?? '',
 			notes: sub.notes ?? '',
-			status: sub.status
+			status: sub.status,
+			isTrial: sub.isTrial ? '1' : '0',
+			trialEndsOn: sub.trialEndsOn ?? ''
 		};
 		dialogOpen = true;
 	}
@@ -176,6 +188,16 @@
 
 	function onCancelConfirmationInput() {
 		cancelConfirmationError = null;
+	}
+
+	function openTrialDialog(sub: Subscription) {
+		pendingTrialSub = sub;
+		// Default to one week out — gives the user a sensible starting point
+		// but is always overridable.
+		const oneWeekOut = new Date();
+		oneWeekOut.setDate(oneWeekOut.getDate() + 7);
+		trialEndsOn = oneWeekOut.toISOString().slice(0, 10);
+		trialDialogOpen = true;
 	}
 
 	function blockInvalidCancelSubmit(event: SubmitEvent) {
@@ -225,6 +247,27 @@
 									{#if sub.category}
 										<div class="text-xs text-muted-foreground">{sub.category}</div>
 									{/if}
+									{#if sub.isTrial && sub.trialEndsOn}
+										{@const trialDays = daysUntil(sub.trialEndsOn)}
+										<Badge
+											variant="outline"
+											class="mt-0.5 text-xs"
+											title="Trial converts to a paid subscription on this date unless cancelled"
+										>
+											{#if trialDays <= 3}
+												<ClockAlert class="mr-1 size-3" />
+											{:else}
+												<Clock class="mr-1 size-3" />
+											{/if}
+											{#if trialDays <= 0}
+												Trial ends today
+											{:else if trialDays === 1}
+												Trial ends tomorrow
+											{:else}
+												Trial ends in {trialDays} days
+											{/if}
+										</Badge>
+									{/if}
 								</Table.Cell>
 								<Table.Cell>
 									<div>{formatMoney(sub.amount, sub.currency)}</div>
@@ -260,6 +303,45 @@
 										</Button>
 
 										{#if sub.status === 'active'}
+											{#if sub.isTrial}
+												<form
+													method="POST"
+													action="?/cancelTrial"
+													use:enhance={() => {
+														return async ({ result, update }) => {
+															await update({ reset: false });
+															if (result.type === 'success') {
+																toast.success(`Cancelled trial for ${sub.name}`);
+																await invalidateAll();
+															} else if (result.type === 'failure') {
+																toast.error(String(result.data?.error ?? 'Could not cancel trial'));
+															}
+														};
+													}}
+												>
+													<input type="hidden" name="id" value={sub.id} />
+													<Button
+														type="submit"
+														variant="ghost"
+														size="icon"
+														title="Cancel trial"
+														class="text-amber-600 hover:text-amber-600 dark:text-amber-500 dark:hover:text-amber-500"
+													>
+														<ClockAlert class="size-4" />
+													</Button>
+												</form>
+											{:else}
+												<Button
+													type="button"
+													variant="ghost"
+													size="icon"
+													title="Start trial"
+													onclick={() => openTrialDialog(sub)}
+												>
+													<Clock class="size-4" />
+												</Button>
+											{/if}
+
 											<Button
 												type="button"
 												variant="ghost"
@@ -346,6 +428,12 @@
 			{#if isEditing}
 				<input type="hidden" name="id" value={form.id} />
 			{/if}
+
+			<!-- Trial fields: round-tripped through every edit so an unrelated
+			     form save can't accidentally wipe an active trial. The values
+			     are managed by the dedicated Trial button + dialog, not here. -->
+			<input type="hidden" name="isTrial" value={form.isTrial} />
+			<input type="hidden" name="trialEndsOn" value={form.trialEndsOn} />
 
 			<datalist id="providers">
 				{#each data.registry as p (p.name)}
@@ -616,3 +704,53 @@
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>
+
+<Dialog.Root bind:open={trialDialogOpen}>
+	<Dialog.Content class="sm:max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>Start trial</Dialog.Title>
+			<Dialog.Description>
+				{#if pendingTrialSub}
+					<strong>{pendingTrialSub.name}</strong> will stay free until the date you
+					pick. If you don't cancel the trial before then, it converts to a paid
+					subscription and the normal billing cycle takes over.
+				{/if}
+			</Dialog.Description>
+		</Dialog.Header>
+		<form
+			method="POST"
+			action="?/startTrial"
+			class="space-y-4"
+			use:enhance={() => {
+				return async ({ result, update }) => {
+					await update({ reset: false });
+					if (result.type === 'success') {
+						toast.success(`Trial set for ${pendingTrialSub?.name ?? 'subscription'}`);
+						trialDialogOpen = false;
+						await invalidateAll();
+					} else if (result.type === 'failure') {
+						toast.error(String(result.data?.error ?? 'Could not start trial'));
+					}
+				};
+			}}
+		>
+			<input type="hidden" name="id" value={pendingTrialSub?.id ?? ''} />
+			<div class="grid gap-2">
+				<Label for="trialEndsOn">Trial ends on</Label>
+				<Input
+					id="trialEndsOn"
+					name="trialEndsOn"
+					type="date"
+					required
+					bind:value={trialEndsOn}
+				/>
+			</div>
+			<Dialog.Footer>
+				<Button type="button" variant="outline" onclick={() => (trialDialogOpen = false)}>
+					Cancel
+				</Button>
+				<Button type="submit">Start trial</Button>
+			</Dialog.Footer>
+		</form>
+	</Dialog.Content>
+</Dialog.Root>

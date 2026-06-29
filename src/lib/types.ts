@@ -33,6 +33,11 @@ export interface Subscription {
 	cancelNotes: string | null;
 	cancelledAt: string | null;
 	notes: string | null;
+	/** True while the subscription is in its free-trial period. Converted to a
+	 *  paid subscription automatically on/after `trialEndsOn` by syncRenewals. */
+	isTrial: boolean;
+	/** ISO date the trial converts to a paid subscription. Null when not on trial. */
+	trialEndsOn: string | null;
 	createdAt: string;
 	updatedAt: string;
 }

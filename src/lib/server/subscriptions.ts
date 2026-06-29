@@ -1,4 +1,4 @@
-import { rollForward, today } from '$lib/renewals';
+import { addCycle, rollForward, today } from '$lib/renewals';
 import { DEFAULT_THEME_ID, isKnownTheme } from '$lib/themes';
 import type {
 	BillingCycle,
@@ -16,26 +16,59 @@ function now(): string {
 /**
  * Roll any active subscription whose next renewal has passed forward to its next
  * future occurrence, so the "next charge" stays accurate over time. Idempotent.
+ *
+ * Also converts any active trial whose `trialEndsOn` has passed: the subscription
+ * becomes a normal paid sub with `nextRenewal` set to one cycle after the trial
+ * end date (so the user is not charged the same day the trial converts).
  */
 export function syncRenewals(): void {
 	const db = getDb();
-	const rows = db
+	const ts = today();
+	const tsNow = now();
+
+	const renewalRows = db
 		.query(
 			`SELECT id, next_renewal, cycle, cycle_count FROM subscriptions
 			 WHERE status = 'active' AND next_renewal IS NOT NULL AND next_renewal < $today`
 		)
-		.all({ $today: today() }) as {
+		.all({ $today: ts }) as {
 		id: number;
 		next_renewal: string;
 		cycle: string;
 		cycle_count: number;
 	}[];
-	if (rows.length === 0) return;
-	const update = db.query('UPDATE subscriptions SET next_renewal = $next WHERE id = $id');
+
+	const trialRows = db
+		.query(
+			`SELECT id, trial_ends_on, cycle, cycle_count FROM subscriptions
+			 WHERE status = 'active' AND is_trial = 1
+			   AND trial_ends_on IS NOT NULL AND trial_ends_on <= $today`
+		)
+		.all({ $today: ts }) as {
+		id: number;
+		trial_ends_on: string;
+		cycle: string;
+		cycle_count: number;
+	}[];
+
+	if (renewalRows.length === 0 && trialRows.length === 0) return;
+
+	const rollRenewal = db.query('UPDATE subscriptions SET next_renewal = $next WHERE id = $id');
+	const convertTrial = db.query(
+		`UPDATE subscriptions
+		 SET is_trial = 0, trial_ends_on = NULL, next_renewal = $next, updated_at = $updatedAt
+		 WHERE id = $id`
+	);
 	const tx = db.transaction(() => {
-		for (const r of rows) {
-			const next = rollForward(r.next_renewal, r.cycle as BillingCycle, r.cycle_count, today());
-			update.run({ $id: r.id, $next: next });
+		for (const r of renewalRows) {
+			const next = rollForward(r.next_renewal, r.cycle as BillingCycle, r.cycle_count, ts);
+			rollRenewal.run({ $id: r.id, $next: next });
+		}
+		for (const r of trialRows) {
+			// First paid charge lands one cycle after the trial end, so the user
+			// isn't billed the same instant the trial expires.
+			const firstPaid = addCycle(r.trial_ends_on, r.cycle as BillingCycle, r.cycle_count);
+			convertTrial.run({ $id: r.id, $next: firstPaid, $updatedAt: tsNow });
 		}
 	});
 	tx();
@@ -61,10 +94,12 @@ export function createSubscription(input: SubscriptionInput): Subscription {
 		.query(
 			`INSERT INTO subscriptions
 				(name, category, amount, currency, cycle, cycle_count, start_date,
-				 next_renewal, status, cancel_url, cancel_notes, notes, created_at, updated_at)
+				 next_renewal, status, cancel_url, cancel_notes, notes,
+				 is_trial, trial_ends_on, created_at, updated_at)
 			 VALUES
 				($name, $category, $amount, $currency, $cycle, $cycleCount, $startDate,
-				 $nextRenewal, $status, $cancelUrl, $cancelNotes, $notes, $createdAt, $updatedAt)
+				 $nextRenewal, $status, $cancelUrl, $cancelNotes, $notes,
+				 $isTrial, $trialEndsOn, $createdAt, $updatedAt)
 			 RETURNING *`
 		)
 		.get({
@@ -80,6 +115,8 @@ export function createSubscription(input: SubscriptionInput): Subscription {
 			$cancelUrl: input.cancelUrl,
 			$cancelNotes: input.cancelNotes,
 			$notes: input.notes,
+			$isTrial: input.isTrial ? 1 : 0,
+			$trialEndsOn: input.trialEndsOn,
 			$createdAt: timestamp,
 			$updatedAt: timestamp
 		}) as SubscriptionRow;
@@ -93,7 +130,8 @@ export function updateSubscription(id: number, input: SubscriptionInput): Subscr
 				name = $name, category = $category, amount = $amount, currency = $currency,
 				cycle = $cycle, cycle_count = $cycleCount, start_date = $startDate,
 				next_renewal = $nextRenewal, status = $status, cancel_url = $cancelUrl,
-				cancel_notes = $cancelNotes, notes = $notes, updated_at = $updatedAt
+				cancel_notes = $cancelNotes, notes = $notes,
+				is_trial = $isTrial, trial_ends_on = $trialEndsOn, updated_at = $updatedAt
 			 WHERE id = $id
 			 RETURNING *`
 		)
@@ -111,6 +149,8 @@ export function updateSubscription(id: number, input: SubscriptionInput): Subscr
 			$cancelUrl: input.cancelUrl,
 			$cancelNotes: input.cancelNotes,
 			$notes: input.notes,
+			$isTrial: input.isTrial ? 1 : 0,
+			$trialEndsOn: input.trialEndsOn,
 			$updatedAt: now()
 		}) as SubscriptionRow | null;
 	return row ? rowToSubscription(row) : null;
@@ -193,11 +233,11 @@ export function importData(bundle: ExportBundle): void {
 			`INSERT INTO subscriptions
 				(name, category, amount, currency, cycle, cycle_count, start_date,
 				 next_renewal, status, cancel_url, cancel_notes, cancelled_at, notes,
-				 created_at, updated_at)
+				 is_trial, trial_ends_on, created_at, updated_at)
 			 VALUES
 				($name, $category, $amount, $currency, $cycle, $cycleCount, $startDate,
 				 $nextRenewal, $status, $cancelUrl, $cancelNotes, $cancelledAt, $notes,
-				 $createdAt, $updatedAt)`
+				 $isTrial, $trialEndsOn, $createdAt, $updatedAt)`
 		);
 		for (const s of b.subscriptions) {
 			insert.run({
@@ -214,6 +254,8 @@ export function importData(bundle: ExportBundle): void {
 				$cancelNotes: s.cancelNotes,
 				$cancelledAt: s.cancelledAt,
 				$notes: s.notes,
+				$isTrial: s.isTrial ? 1 : 0,
+				$trialEndsOn: s.trialEndsOn,
 				$createdAt: s.createdAt,
 				$updatedAt: s.updatedAt
 			});
