@@ -224,7 +224,7 @@
 					<p class="text-sm font-medium">Export</p>
 					<p class="text-sm text-muted-foreground">Download all subscriptions and settings as JSON.</p>
 				</div>
-				<Button href="/api/export" download>
+				<Button href="/api/export" download={''}>
 					<Download class="size-4" />
 					Export JSON
 				</Button>
