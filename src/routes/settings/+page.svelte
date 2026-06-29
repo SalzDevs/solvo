@@ -37,16 +37,19 @@
 	let themeForm: HTMLFormElement | undefined = $state();
 	let themeSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
-	// Sync the local selection from server data when it changes — most
-	// importantly after `invalidateAll()` following an import, where the
-	// theme is applied by the layout's $effect but the radio card would
-	// otherwise still be pointing at the previous selection. For the
-	// user-clicks-a-card case, selectedTheme was just updated by
-	// bind:group to match the server, so the equality check makes this a
-	// no-op and we don't fight the user's input.
+	// The last value the server told us about. The sync effect below
+	// compares against this so it only fires when the *server* value
+	// changes — not when the user clicks a card (which updates
+	// selectedTheme locally via bind:group). Without this distinction
+	// the effect would race the click and snap the radio back to the
+	// stale server value.
+	// untrack: this is the initial value, we don't want to depend on it.
+	// svelte-ignore state_referenced_locally
+	let lastServerTheme = untrack(() => getTheme(data.settings.theme).id);
 	$effect(() => {
 		const serverTheme = getTheme(data.settings.theme).id;
-		if (selectedTheme !== serverTheme) {
+		if (serverTheme !== lastServerTheme) {
+			lastServerTheme = serverTheme;
 			selectedTheme = serverTheme;
 		}
 	});
@@ -79,18 +82,23 @@
 	let settingsForm: HTMLFormElement | undefined = $state();
 	let currencySaveTimer: ReturnType<typeof setTimeout> | null = null;
 
-	// Same sync pattern as the theme: after import (or any other data
-	// refresh), mirror the server values into the local form state. Safe
-	// for the debounced-save case because the save only completes after
-	// the user stops editing, by which point the local values already
-	// match the server ones.
+	// Same pattern as the theme: track the last server value and only
+	// sync local state when the server value actually changes. Critical
+	// for the rate input where the user is continuously typing — the
+	// effect must not fire on every keystroke and snap the value back.
+	// svelte-ignore state_referenced_locally
+	let lastServerCurrency = untrack(() => data.settings.displayCurrency);
 	$effect(() => {
-		if (displayCurrency !== data.settings.displayCurrency) {
+		if (data.settings.displayCurrency !== lastServerCurrency) {
+			lastServerCurrency = data.settings.displayCurrency;
 			displayCurrency = data.settings.displayCurrency;
 		}
 	});
+	// svelte-ignore state_referenced_locally
+	let lastServerRate = untrack(() => data.settings.fxEurToUsd);
 	$effect(() => {
-		if (fxEurToUsd !== data.settings.fxEurToUsd) {
+		if (data.settings.fxEurToUsd !== lastServerRate) {
+			lastServerRate = data.settings.fxEurToUsd;
 			fxEurToUsd = data.settings.fxEurToUsd;
 		}
 	});
