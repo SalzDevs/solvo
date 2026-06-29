@@ -50,3 +50,11 @@ export interface Settings {
 	/** Visual theme. The id is a `ThemeId` from `$lib/themes`. */
 	theme: ThemeId;
 }
+
+/** Shape of the JSON files produced by `exportData` and consumed by `importData`. */
+export interface ExportBundle {
+	version: 1;
+	exportedAt: string;
+	settings: Settings;
+	subscriptions: Subscription[];
+}

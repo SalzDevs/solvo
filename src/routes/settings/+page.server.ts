@@ -1,11 +1,17 @@
 import { fail } from '@sveltejs/kit';
-import { getSettings, importData, updateSettings, type ExportBundle } from '$lib/server/subscriptions';
+import { getSettings, importData, updateSettings } from '$lib/server/subscriptions';
+import { listSubscriptions } from '$lib/server/subscriptions';
 import { isKnownTheme } from '$lib/themes';
-import { CURRENCIES, type Currency, type Settings } from '$lib/types';
+import { CURRENCIES, type Currency, type ExportBundle, type Settings } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
-	return { settings: getSettings() };
+	return {
+		settings: getSettings(),
+		// Exposed so the import preview can warn the user how much data they're
+		// about to replace ("this will replace your N current subscriptions").
+		currentSubscriptionCount: listSubscriptions().length
+	};
 };
 
 export const actions: Actions = {

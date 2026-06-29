@@ -4,12 +4,23 @@
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import * as Card from '$lib/components/ui/card';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import { computePreview, validateBundle } from '$lib/import-preview';
+	import { formatMoney } from '$lib/cost';
 	import { DEFAULT_THEME_ID, THEMES, getTheme } from '$lib/themes';
-	import { CURRENCIES, type Currency } from '$lib/types';
-	import { Check, Download, Palette, Upload } from '@lucide/svelte';
+	import { CURRENCIES, type Currency, type ExportBundle } from '$lib/types';
+	import {
+		AlertTriangle,
+		Check,
+		Download,
+		Pause,
+		Palette,
+		Upload,
+		XCircle
+	} from '@lucide/svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -59,6 +70,61 @@
 		currencySaveTimer = setTimeout(() => {
 			settingsForm?.requestSubmit();
 		}, 500);
+	}
+
+	// --- Import preview state ---
+	// Import is a two-step flow: pick file → client-side parse → preview
+	// dialog with the diff → user confirms or cancels. The actual import
+	// runs through the existing ?/import form action — we just gate it
+	// behind the dialog so the user can see what they're about to lose.
+	let importForm: HTMLFormElement | undefined = $state();
+	let importDialogOpen = $state(false);
+	let pendingBundle = $state<ExportBundle | null>(null);
+	const importPreview = $derived(
+		pendingBundle
+			? computePreview(pendingBundle, data.settings, data.currentSubscriptionCount)
+			: null
+	);
+
+	async function onImportFileChange(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(await file.text());
+		} catch {
+			toast.error('That file is not valid JSON.');
+			input.value = '';
+			return;
+		}
+
+		const result = validateBundle(parsed);
+		if (!result.valid) {
+			toast.error(result.error ?? 'Not a valid Solvo backup.');
+			input.value = '';
+			return;
+		}
+
+		pendingBundle = parsed as ExportBundle;
+		importDialogOpen = true;
+	}
+
+	function acceptImport() {
+		// Hand off to the existing form action. The use:enhance handler below
+		// takes care of the toast + invalidation; `update({ reset: true })`
+		// inside it clears the file input.
+		importDialogOpen = false;
+		importForm?.requestSubmit();
+	}
+
+	function cancelImport() {
+		pendingBundle = null;
+		importDialogOpen = false;
+		// Clear the file input so the user can pick a different file or
+		// close without leaving a stale selection behind.
+		importForm?.reset();
 	}
 
 	const selectClass =
@@ -231,16 +297,21 @@
 			</div>
 
 			<form
+				bind:this={importForm}
 				method="POST"
 				action="?/import"
 				enctype="multipart/form-data"
 				class="flex items-end justify-between gap-4"
 				use:enhance={() => {
 					return async ({ result, update }) => {
+						// reset: true so the file input is cleared after a
+						// successful (or failed) import — the user shouldn't
+						// see the same file still selected.
 						await update({ reset: true });
 						if (result.type === 'success') {
 							toast.success(`Imported ${result.data?.imported ?? 0} subscriptions`);
 							await invalidateAll();
+							pendingBundle = null;
 						} else if (result.type === 'failure') {
 							toast.error(String(result.data?.error ?? 'Import failed'));
 						}
@@ -250,15 +321,194 @@
 				<div class="grid gap-2">
 					<p class="text-sm font-medium">Import</p>
 					<p class="text-sm text-muted-foreground">
-						Restoring a backup replaces all current data.
+						Pick a Solvo backup to preview the changes before importing.
 					</p>
-					<Input id="file" name="file" type="file" accept="application/json,.json" required />
+					<Input
+						id="file"
+						name="file"
+						type="file"
+						accept="application/json,.json"
+						required
+						onchange={onImportFileChange}
+					/>
 				</div>
-				<Button type="submit" variant="outline">
-					<Upload class="size-4" />
-					Import
-				</Button>
 			</form>
 		</Card.Content>
 	</Card.Root>
 </div>
+
+<Dialog.Root
+	bind:open={importDialogOpen}
+	onOpenChange={(open) => {
+		if (!open) cancelImport();
+	}}
+>
+	<Dialog.Content class="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+		<Dialog.Header>
+			<Dialog.Title>Import backup</Dialog.Title>
+			<Dialog.Description>
+				Review the changes below. Accepting will replace all your current data.
+			</Dialog.Description>
+		</Dialog.Header>
+
+		{#if importPreview}
+			{@const anySettingsChanged =
+				importPreview.settings.displayCurrency.changed ||
+				importPreview.settings.fxEurToUsd.changed ||
+				importPreview.settings.theme.changed}
+			<div class="space-y-5">
+				<div
+					class="flex items-start gap-3 rounded-md border border-destructive/50 bg-destructive/5 p-3"
+					data-testid="import-warning"
+				>
+					<AlertTriangle class="text-destructive mt-0.5 size-4 shrink-0" />
+					<div class="text-sm">
+						<p class="font-medium">
+							This will replace your {importPreview.currentCount} current
+							{importPreview.currentCount === 1 ? 'subscription' : 'subscriptions'}.
+						</p>
+						<p class="text-muted-foreground mt-0.5">
+							Make sure you have a backup if you want to keep them.
+						</p>
+					</div>
+				</div>
+
+				<section>
+					<h3 class="mb-2 text-sm font-semibold">Settings</h3>
+					{#if !anySettingsChanged}
+						<p class="text-muted-foreground text-sm">No changes to settings.</p>
+					{:else}
+						<dl class="space-y-1 text-sm">
+							{#if importPreview.settings.displayCurrency.changed}
+								<div class="flex items-center justify-between gap-2">
+									<dt class="text-muted-foreground">Display currency</dt>
+									<dd class="font-mono">
+										{importPreview.settings.displayCurrency.from}
+										<span class="text-muted-foreground">→</span>
+										{importPreview.settings.displayCurrency.to}
+									</dd>
+								</div>
+							{/if}
+							{#if importPreview.settings.fxEurToUsd.changed}
+								<div class="flex items-center justify-between gap-2">
+									<dt class="text-muted-foreground">Exchange rate (1 EUR → USD)</dt>
+									<dd class="font-mono">
+										{importPreview.settings.fxEurToUsd.from}
+										<span class="text-muted-foreground">→</span>
+										{importPreview.settings.fxEurToUsd.to}
+									</dd>
+								</div>
+							{/if}
+							{#if importPreview.settings.theme.changed}
+								<div class="flex items-center justify-between gap-2">
+									<dt class="text-muted-foreground">Theme</dt>
+									<dd class="font-mono">
+										{importPreview.settings.theme.from}
+										<span class="text-muted-foreground">→</span>
+										{importPreview.settings.theme.to}
+									</dd>
+								</div>
+							{/if}
+						</dl>
+					{/if}
+				</section>
+
+				<section>
+					<h3 class="mb-2 text-sm font-semibold">
+						Subscriptions
+						<span class="text-muted-foreground font-normal">
+							({importPreview.subscriptions.total} total)
+						</span>
+					</h3>
+					{#if importPreview.subscriptions.total === 0}
+						<p class="text-muted-foreground text-sm">
+							This backup contains no subscriptions. Accepting will leave Solvo with no data.
+						</p>
+					{:else}
+						<div class="max-h-72 space-y-3 overflow-y-auto pr-1">
+							{#if importPreview.subscriptions.byStatus.active.length > 0}
+								<div>
+									<h4 class="text-muted-foreground mb-1 flex items-center gap-1.5 text-xs font-medium tracking-wide uppercase">
+										<Check class="size-3" />
+										Active ({importPreview.subscriptions.active})
+									</h4>
+									<ul class="space-y-0.5 text-sm">
+										{#each importPreview.subscriptions.byStatus.active as s (s.id)}
+											<li class="flex items-baseline justify-between gap-2">
+												<span class="truncate">{s.name}</span>
+												<span class="text-muted-foreground shrink-0 text-xs">
+													{formatMoney(s.amount, s.currency)}/
+													{s.cycleCount > 1 ? `${s.cycleCount} ${s.cycle}` : s.cycle}
+												</span>
+											</li>
+										{/each}
+									</ul>
+								</div>
+							{/if}
+							{#if importPreview.subscriptions.byStatus.paused.length > 0}
+								<div>
+									<h4 class="text-muted-foreground mb-1 flex items-center gap-1.5 text-xs font-medium tracking-wide uppercase">
+										<Pause class="size-3" />
+										Paused ({importPreview.subscriptions.paused})
+									</h4>
+									<ul class="space-y-0.5 text-sm">
+										{#each importPreview.subscriptions.byStatus.paused as s (s.id)}
+											<li class="flex items-baseline justify-between gap-2">
+												<span class="truncate">{s.name}</span>
+												<span class="text-muted-foreground shrink-0 text-xs">
+													{formatMoney(s.amount, s.currency)}/
+													{s.cycleCount > 1 ? `${s.cycleCount} ${s.cycle}` : s.cycle}
+												</span>
+											</li>
+										{/each}
+									</ul>
+								</div>
+							{/if}
+							{#if importPreview.subscriptions.byStatus.cancelled.length > 0}
+								<div>
+									<h4 class="text-muted-foreground mb-1 flex items-center gap-1.5 text-xs font-medium tracking-wide uppercase">
+										<XCircle class="size-3" />
+										Cancelled ({importPreview.subscriptions.cancelled})
+									</h4>
+									<ul class="space-y-0.5 text-sm">
+										{#each importPreview.subscriptions.byStatus.cancelled as s (s.id)}
+											<li class="flex items-baseline justify-between gap-2">
+												<span class="truncate">{s.name}</span>
+												<span class="text-muted-foreground shrink-0 text-xs">
+													{#if s.cancelledAt}
+														cancelled {new Date(s.cancelledAt).toLocaleDateString()}
+													{/if}
+												</span>
+											</li>
+										{/each}
+									</ul>
+								</div>
+							{/if}
+						</div>
+					{/if}
+				</section>
+
+				{#if importPreview.warnings.length > 0}
+					<section class="space-y-1.5">
+						{#each importPreview.warnings as w (w)}
+							<div
+								class="text-foreground flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-50 p-2.5 text-sm dark:bg-amber-950/20"
+							>
+								<AlertTriangle class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-500" />
+								<span>{w}</span>
+							</div>
+						{/each}
+					</section>
+				{/if}
+			</div>
+		{/if}
+
+		<Dialog.Footer class="gap-2">
+			<Button variant="outline" onclick={cancelImport}>Cancel</Button>
+			<Button onclick={acceptImport} disabled={!pendingBundle}>
+				<Upload class="size-4" />
+				Accept Import
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

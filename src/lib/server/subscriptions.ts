@@ -1,6 +1,12 @@
 import { rollForward, today } from '$lib/renewals';
 import { DEFAULT_THEME_ID, isKnownTheme } from '$lib/themes';
-import type { BillingCycle, Settings, Subscription, SubscriptionInput } from '$lib/types';
+import type {
+	BillingCycle,
+	ExportBundle,
+	Settings,
+	Subscription,
+	SubscriptionInput
+} from '$lib/types';
 import { getDb, rowToSubscription, type SubscriptionRow } from './db';
 
 function now(): string {
@@ -164,13 +170,6 @@ export function updateSettings(settings: Settings): Settings {
 	upsert.run({ $key: 'fxEurToUsd', $value: String(settings.fxEurToUsd) });
 	upsert.run({ $key: 'theme', $value: settings.theme });
 	return getSettings();
-}
-
-export interface ExportBundle {
-	version: 1;
-	exportedAt: string;
-	settings: Settings;
-	subscriptions: Subscription[];
 }
 
 export function exportData(): ExportBundle {
