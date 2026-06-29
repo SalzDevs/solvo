@@ -165,7 +165,6 @@
 						formatValue={money}
 						centerLabel={chartCenterLabel}
 						onSelect={selectedCategory ? undefined : onCategorySelect}
-						selected={selectedCategory}
 					/>
 				</Card.Content>
 			</Card.Root>

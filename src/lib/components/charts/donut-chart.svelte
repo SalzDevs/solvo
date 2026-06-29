@@ -57,6 +57,14 @@
 		})()
 	);
 
+	// Track which slice the user is hovering over (pie or legend). The
+	// hovered slice stays full-opacity; the rest dim. The center swaps to
+	// show that slice's label and value while the pointer is over it.
+	let hovered = $state<string | null>(null);
+	const hoveredSegment = $derived(
+		hovered ? (segments.find((s) => s.key === hovered) ?? null) : null
+	);
+
 	const interactive = $derived(onSelect !== undefined);
 
 	function select(key: string) {
@@ -70,6 +78,14 @@
 			event.preventDefault();
 			select(key);
 		}
+	}
+
+	/** A slice is dimmed when the user is focusing on a different one
+	 *  (either via hover or via a persistent selection). */
+	function isDimmed(key: string): boolean {
+		if (hovered !== null && hovered !== key) return true;
+		if (selected !== null && selected !== key) return true;
+		return false;
 	}
 </script>
 
@@ -89,7 +105,7 @@
 					stroke-dasharray="{s.dash} {CIRCUMFERENCE - s.dash}"
 					stroke-dashoffset={s.offset}
 					class:segment-interactive={interactive}
-					class:segment-dim={selected !== null && selected !== s.key}
+					class:segment-dim={isDimmed(s.key)}
 					role={interactive ? 'button' : undefined}
 					tabindex={interactive ? 0 : undefined}
 					aria-label={interactive
@@ -98,13 +114,27 @@
 					aria-pressed={interactive ? selected === s.key : undefined}
 					onclick={interactive ? () => select(s.key) : undefined}
 					onkeydown={interactive ? (e) => onSliceKeydown(e, s.key) : undefined}
+					onmouseenter={() => (hovered = s.key)}
+					onmouseleave={() => (hovered = null)}
 				/>
 			{/each}
 		</svg>
-		<div class="absolute inset-0 flex flex-col items-center justify-center text-center">
-			<span class="text-lg font-semibold tracking-tight">{formatValue(total)}</span>
-			{#if centerLabel}
-				<span class="text-xs text-muted-foreground">{centerLabel}</span>
+		<div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-2 text-center">
+			{#if hoveredSegment}
+				<span class="w-full text-sm font-medium tracking-tight break-words">
+					{hoveredSegment.label}
+				</span>
+				<span class="text-base font-semibold tracking-tight">
+					{formatValue(hoveredSegment.value)}
+				</span>
+				<span class="text-xs text-muted-foreground">
+					{Math.round(hoveredSegment.fraction * 100)}%
+				</span>
+			{:else}
+				<span class="text-lg font-semibold tracking-tight">{formatValue(total)}</span>
+				{#if centerLabel}
+					<span class="text-xs text-muted-foreground">{centerLabel}</span>
+				{/if}
 			{/if}
 		</div>
 	</div>
@@ -115,23 +145,30 @@
 				{#if interactive}
 					<button
 						type="button"
-						class="hover:bg-muted/50 flex w-full items-center gap-2 rounded-sm px-1.5 py-0.5 text-left text-sm transition-colors"
+						class="hover:bg-muted/50 flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-left text-sm transition-colors"
 						class:bg-muted={selected === s.key}
 						aria-pressed={selected === s.key}
 						aria-label="Show {s.label}: {formatValue(s.value)}"
 						onclick={() => select(s.key)}
+						onmouseenter={() => (hovered = s.key)}
+						onmouseleave={() => (hovered = null)}
 					>
 						<span class="size-2.5 shrink-0 rounded-full" style="background: {s.color}"></span>
-						<span class="flex-1 truncate">{s.label}</span>
-						<span class="text-muted-foreground">{Math.round(s.fraction * 100)}%</span>
-						<span class="w-20 text-right font-medium">{formatValue(s.value)}</span>
+						<span class="min-w-0 flex-1 break-words">{s.label}</span>
+						<span class="shrink-0 text-muted-foreground">{Math.round(s.fraction * 100)}%</span>
+						<span class="w-20 shrink-0 text-right font-medium">{formatValue(s.value)}</span>
 					</button>
 				{:else}
-					<div class="flex items-center gap-2 px-1.5 py-0.5 text-sm">
+					<div
+						class="flex w-full items-center gap-2 px-1.5 py-1 text-sm"
+						role="presentation"
+						onmouseenter={() => (hovered = s.key)}
+						onmouseleave={() => (hovered = null)}
+					>
 						<span class="size-2.5 shrink-0 rounded-full" style="background: {s.color}"></span>
-						<span class="flex-1 truncate">{s.label}</span>
-						<span class="text-muted-foreground">{Math.round(s.fraction * 100)}%</span>
-						<span class="w-20 text-right font-medium">{formatValue(s.value)}</span>
+						<span class="min-w-0 flex-1 break-words">{s.label}</span>
+						<span class="shrink-0 text-muted-foreground">{Math.round(s.fraction * 100)}%</span>
+						<span class="w-20 shrink-0 text-right font-medium">{formatValue(s.value)}</span>
 					</div>
 				{/if}
 			</li>
@@ -147,9 +184,7 @@
 		cursor: pointer;
 		transition: opacity 0.15s ease;
 	}
-	.segment-interactive:hover,
 	.segment-interactive:focus-visible {
-		opacity: 0.85;
 		outline: none;
 	}
 	.segment-dim {
