@@ -40,26 +40,53 @@ function optional(form: FormData, key: string): string | null {
 	return value === '' ? null : value;
 }
 
+/** Keyed by form field name so the client can show errors next to the
+ *  relevant input instead of (or in addition to) a generic toast. */
+export type FieldErrors = Partial<Record<'name' | 'amount' | 'currency' | 'cycle' | 'cycleCount' | 'cancelUrl', string>>;
+
 type ParseResult =
 	| { ok: true; value: SubscriptionInput }
-	| { ok: false; error: string };
+	| { ok: false; errors: FieldErrors };
+
+function isValidUrl(value: string): boolean {
+	try {
+		new URL(value);
+		return true;
+	} catch {
+		return false;
+	}
+}
 
 function parseInput(form: FormData): ParseResult {
+	const errors: FieldErrors = {};
+
 	const name = str(form, 'name');
-	if (!name) return { ok: false, error: 'Name is required.' };
+	if (!name) errors.name = 'Name is required.';
 
 	const amountMajor = Number(str(form, 'amount'));
 	if (!Number.isFinite(amountMajor) || amountMajor < 0) {
-		return { ok: false, error: 'Enter a valid price.' };
+		errors.amount = 'Enter a valid price.';
 	}
 
 	const currency = str(form, 'currency') as Currency;
-	if (!CURRENCIES.includes(currency)) return { ok: false, error: 'Invalid currency.' };
+	if (!CURRENCIES.includes(currency)) errors.currency = 'Invalid currency.';
 
 	const cycle = str(form, 'cycle') as BillingCycle;
-	if (!BILLING_CYCLES.includes(cycle)) return { ok: false, error: 'Invalid billing cycle.' };
+	if (!BILLING_CYCLES.includes(cycle)) errors.cycle = 'Invalid billing cycle.';
 
-	const cycleCount = Math.max(1, Math.floor(Number(str(form, 'cycleCount')) || 1));
+	const cycleCountRaw = str(form, 'cycleCount');
+	const cycleCountNum = Number(cycleCountRaw);
+	if (cycleCountRaw !== '' && (!Number.isFinite(cycleCountNum) || cycleCountNum < 1)) {
+		errors.cycleCount = 'Must be 1 or more.';
+	}
+	const cycleCount = Math.max(1, Math.floor(cycleCountNum) || 1);
+
+	const cancelUrl = optional(form, 'cancelUrl');
+	if (cancelUrl && !isValidUrl(cancelUrl)) {
+		errors.cancelUrl = 'Enter a valid URL (including https://).';
+	}
+
+	if (Object.keys(errors).length > 0) return { ok: false, errors };
 
 	const status = (str(form, 'status') || 'active') as SubscriptionStatus;
 
@@ -75,7 +102,7 @@ function parseInput(form: FormData): ParseResult {
 			startDate: optional(form, 'startDate'),
 			nextRenewal: optional(form, 'nextRenewal'),
 			status,
-			cancelUrl: optional(form, 'cancelUrl'),
+			cancelUrl,
 			cancelNotes: optional(form, 'cancelNotes'),
 			notes: optional(form, 'notes'),
 			// Trial fields are preserved across edits via hidden inputs on the
@@ -101,7 +128,7 @@ export const actions: Actions = {
 	create: async ({ request }) => {
 		const form = await request.formData();
 		const parsed = parseInput(form);
-		if (!parsed.ok) return fail(400, { error: parsed.error });
+		if (!parsed.ok) return fail(400, { error: 'Please fix the highlighted fields.', errors: parsed.errors });
 		createSubscription(parsed.value);
 		return { success: true };
 	},
@@ -111,7 +138,7 @@ export const actions: Actions = {
 		const subId = id(form);
 		if (!subId) return fail(400, { error: 'Missing subscription id.' });
 		const parsed = parseInput(form);
-		if (!parsed.ok) return fail(400, { error: parsed.error });
+		if (!parsed.ok) return fail(400, { error: 'Please fix the highlighted fields.', errors: parsed.errors });
 		updateSubscription(subId, parsed.value);
 		return { success: true };
 	},

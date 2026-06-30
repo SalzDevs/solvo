@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'bun:test';
-import { byCategory, bySubscription, convert, cycleDays, formatMoney, normalize, totals } from './cost';
+import {
+	byCategory,
+	bySubscription,
+	convert,
+	cycleDays,
+	formatMoney,
+	normalize,
+	topSpenders,
+	totals
+} from './cost';
 import type { Subscription } from './types';
 
 function sub(overrides: Partial<Subscription> = {}): Subscription {
@@ -159,6 +168,42 @@ describe('bySubscription', () => {
 		const result = bySubscription(subs, 'Tools', 'EUR', 2);
 		// 1000 EUR + (2000 USD / 2) = 2000 EUR per month
 		expect(result.reduce((sum, r) => sum + r.perMonth, 0)).toBeCloseTo(2000, 6);
+	});
+});
+
+describe('topSpenders', () => {
+	it('ranks active subscriptions by monthly cost descending', () => {
+		const subs = [
+			sub({ id: 1, name: 'Cheap', amount: 500 }),
+			sub({ id: 2, name: 'Pricey', amount: 5000 }),
+			sub({ id: 3, name: 'Mid', amount: 2000 })
+		];
+		const result = topSpenders(subs, 'EUR', 1);
+		expect(result.map((r) => r.subscription.name)).toEqual(['Pricey', 'Mid', 'Cheap']);
+	});
+
+	it('excludes non-active subscriptions', () => {
+		const subs = [
+			sub({ id: 1, name: 'Active', amount: 100, status: 'active' }),
+			sub({ id: 2, name: 'Cancelled', amount: 99999, status: 'cancelled' })
+		];
+		const result = topSpenders(subs, 'EUR', 1);
+		expect(result.map((r) => r.subscription.name)).toEqual(['Active']);
+	});
+
+	it('respects the limit', () => {
+		const subs = [sub({ id: 1 }), sub({ id: 2 }), sub({ id: 3 }), sub({ id: 4 })];
+		expect(topSpenders(subs, 'EUR', 1, 2)).toHaveLength(2);
+	});
+
+	it('converts currency before ranking', () => {
+		const subs = [
+			sub({ id: 1, name: 'EurSub', amount: 1000, currency: 'EUR' }),
+			sub({ id: 2, name: 'UsdSub', amount: 500, currency: 'USD' })
+		];
+		// 10 EUR/mo vs 5 USD/mo ≈ 4.63 EUR/mo at rate 1.08 -> EurSub wins.
+		const result = topSpenders(subs, 'EUR', 1.08);
+		expect(result[0].subscription.name).toBe('EurSub');
 	});
 });
 

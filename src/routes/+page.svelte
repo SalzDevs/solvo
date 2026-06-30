@@ -4,7 +4,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import BarChart from '$lib/components/charts/bar-chart.svelte';
 	import DonutChart from '$lib/components/charts/donut-chart.svelte';
-	import { bySubscription, formatMoney } from '$lib/cost';
+	import { bySubscription, formatMoney, topSpenders } from '$lib/cost';
 	import { renewalStatus, type RenewalTone } from '$lib/renewals';
 	import { getActiveTrialReminders, type TrialTone } from '$lib/trials';
 	import {
@@ -12,6 +12,7 @@
 		CalendarClock,
 		CircleDollarSign,
 		ClockAlert,
+		Flame,
 		Plus,
 		TrendingDown
 	} from '@lucide/svelte';
@@ -32,6 +33,15 @@
 	function money(minor: number): string {
 		return formatMoney(Math.round(minor), cur);
 	}
+
+	// The single most actionable insight on the dashboard: what's actually
+	// costing the most, ranked, so the user knows what to look at first.
+	const topSpendersList = $derived(
+		topSpenders(data.subscriptions ?? [], data.settings.displayCurrency, data.settings.fxEurToUsd, 3)
+	);
+	const topSpenderShare = $derived((perMonth: number) =>
+		data.totals.perMonth > 0 ? Math.round((perMonth / data.totals.perMonth) * 100) : 0
+	);
 
 	const maxMonth = $derived(Math.max(0, ...data.projection.map((b) => b.total)));
 
@@ -146,6 +156,47 @@
 				</Card.Root>
 			{/each}
 		</div>
+
+		{#if topSpendersList.length > 0}
+			<Card.Root>
+				<Card.Header>
+					<Card.Title class="flex items-center gap-2">
+						<Flame class="size-4" />
+						Most expensive
+					</Card.Title>
+					<Card.Description>
+						Your priciest active subscriptions — the best place to start if you're cutting costs.
+					</Card.Description>
+				</Card.Header>
+				<Card.Content>
+					<ul class="space-y-2">
+						{#each topSpendersList as item, i (item.subscription.id)}
+							<li
+								class="hover:bg-muted/30 flex items-center justify-between gap-3 rounded-md border px-3 py-2"
+							>
+								<div class="flex min-w-0 items-center gap-3">
+									<span
+										class="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground"
+									>
+										{i + 1}
+									</span>
+									<div class="min-w-0">
+										<p class="truncate text-sm font-medium">{item.subscription.name}</p>
+										<p class="text-muted-foreground text-xs">
+											{topSpenderShare(item.perMonth)}% of your monthly spend
+										</p>
+									</div>
+								</div>
+								<div class="flex shrink-0 items-center gap-2">
+									<span class="text-sm font-semibold">{money(item.perMonth)}/mo</span>
+									<Button href="/subscriptions" variant="ghost" size="sm">Manage</Button>
+								</div>
+							</li>
+						{/each}
+					</ul>
+				</Card.Content>
+			</Card.Root>
+		{/if}
 
 		{#if trialReminders.length > 0}
 			<Card.Root>

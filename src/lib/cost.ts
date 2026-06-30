@@ -135,6 +135,29 @@ export function bySubscription(
 	return items.sort((a, b) => b.perMonth - a.perMonth);
 }
 
+export interface SpenderTotal {
+	subscription: Subscription;
+	perMonth: number;
+}
+
+/**
+ * The most expensive active subscriptions, ranked by monthly spend
+ * descending. Powers the dashboard's "Most expensive" callout — the single
+ * most actionable list in a subscription-cancelling app.
+ */
+export function topSpenders(
+	subs: Subscription[],
+	displayCurrency: Currency,
+	fxEurToUsd: number,
+	limit = 3
+): SpenderTotal[] {
+	return subs
+		.filter((s) => s.status === 'active')
+		.map((s) => ({ subscription: s, perMonth: normalize(s, displayCurrency, fxEurToUsd).perMonth }))
+		.sort((a, b) => b.perMonth - a.perMonth)
+		.slice(0, limit);
+}
+
 const CURRENCY_SYMBOL: Record<Currency, string> = { EUR: '€', USD: '$' };
 
 /** Format minor units as a currency string, e.g. 1299 -> "€12.99". */

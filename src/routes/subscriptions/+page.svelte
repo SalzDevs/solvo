@@ -25,8 +25,26 @@
 		uniqueCategories,
 		type FilterStatus
 	} from '$lib/subscriptions-filter';
+	import { nextSortState, sortSubscriptions, type SortKey, type SortState } from '$lib/subscriptions-sort';
 	import { BILLING_CYCLES, CURRENCIES, type BillingCycle, type Subscription } from '$lib/types';
-	import { ExternalLink, AlertCircle, CheckCircle2, Clock, ClockAlert, Pencil, Plus, RotateCcw, Search, Trash2, X, XCircle } from '@lucide/svelte';
+	import type { FieldErrors } from './+page.server';
+	import {
+		ArrowDown,
+		ArrowUp,
+		ArrowUpDown,
+		ExternalLink,
+		AlertCircle,
+		CheckCircle2,
+		Clock,
+		ClockAlert,
+		Pencil,
+		Plus,
+		RotateCcw,
+		Search,
+		Trash2,
+		X,
+		XCircle
+	} from '@lucide/svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -75,7 +93,15 @@
 
 	let dialogOpen = $state(false);
 	let form = $state<FormState>(emptyForm());
+	let formErrors = $state<FieldErrors>({});
 	const isEditing = $derived(form.id !== null);
+
+	/** Clears a single field's error as the user edits it, so the message
+	 *  disappears the moment they start fixing it instead of staying stale
+	 *  until the next submit. */
+	function clearFieldError(field: keyof FieldErrors) {
+		if (formErrors[field]) formErrors = { ...formErrors, [field]: undefined };
+	}
 
 	// nextRenewal is a derived field — it always reflects the current
 	// startDate + cycle + cycleCount, live ("hot reload"). The user can
@@ -108,6 +134,10 @@
 	let trialDialogOpen = $state(false);
 	let pendingTrialSubId = $state('');
 	let trialEndsOn = $state('');
+	// Set when the dialog is opened from a specific row's "Start trial"
+	// button — locks the subscription picker to that one row instead of
+	// making the user re-find it in a dropdown they just clicked away from.
+	let lockedTrialSub = $state<Subscription | null>(null);
 
 	const cancelPhrase = $derived(
 		pendingCancel ? `${pendingCancel.name} canceled` : ''
@@ -135,6 +165,7 @@
 
 	function openAdd() {
 		form = emptyForm();
+		formErrors = {};
 		dialogOpen = true;
 	}
 
@@ -156,6 +187,7 @@
 			isTrial: sub.isTrial ? '1' : '0',
 			trialEndsOn: sub.trialEndsOn ?? ''
 		};
+		formErrors = {};
 		dialogOpen = true;
 	}
 
@@ -202,6 +234,13 @@
 		cancelConfirmationError = null;
 	}
 
+	function defaultTrialEndDate(): string {
+		// One week out — a sensible starting point, always overridable.
+		const oneWeekOut = new Date();
+		oneWeekOut.setDate(oneWeekOut.getDate() + 7);
+		return oneWeekOut.toISOString().slice(0, 10);
+	}
+
 	function openTrialDialog() {
 		// Pre-select the first eligible subscription (active + not already
 		// on trial) so the user can submit with a single click if the
@@ -209,12 +248,16 @@
 		const eligible = data.subscriptions.find(
 			(s) => s.status === 'active' && !s.isTrial
 		);
+		lockedTrialSub = null;
 		pendingTrialSubId = eligible ? String(eligible.id) : '';
-		// Default to one week out — gives the user a sensible starting point
-		// but is always overridable.
-		const oneWeekOut = new Date();
-		oneWeekOut.setDate(oneWeekOut.getDate() + 7);
-		trialEndsOn = oneWeekOut.toISOString().slice(0, 10);
+		trialEndsOn = defaultTrialEndDate();
+		trialDialogOpen = true;
+	}
+
+	function openTrialDialogFor(sub: Subscription) {
+		lockedTrialSub = sub;
+		pendingTrialSubId = String(sub.id);
+		trialEndsOn = defaultTrialEndDate();
 		trialDialogOpen = true;
 	}
 
@@ -254,6 +297,24 @@
 	const filtersActive = $derived(hasActiveFilters(filters));
 	const allCategories = $derived(uniqueCategories(data.subscriptions));
 	const categoryCount = $derived(categoryCounts(data.subscriptions));
+
+	// --- Sorting ------------------------------------------------------------
+	// null = the default order (active first, then alphabetical, as returned
+	// by the server). Clicking a header switches to an explicit sort; clicking
+	// the same header again flips direction.
+	let sort = $state<SortState | null>(null);
+	const sorted = $derived(
+		sort ? sortSubscriptions(filtered, sort, data.settings.displayCurrency, data.settings.fxEurToUsd) : filtered
+	);
+
+	function toggleSort(key: SortKey) {
+		sort = nextSortState(sort, key);
+	}
+
+	function sortIcon(key: SortKey) {
+		if (!sort || sort.key !== key) return ArrowUpDown;
+		return sort.direction === 'asc' ? ArrowUp : ArrowDown;
+	}
 
 	function clearFilters() {
 		query = '';
@@ -387,160 +448,243 @@
 					</Button>
 				</div>
 			{:else}
-				<Table.Root>
-					<Table.Header>
-						<Table.Row>
-							<Table.Head>Name</Table.Head>
-							<Table.Head>Price</Table.Head>
-							<Table.Head class="text-right">Monthly ({cur})</Table.Head>
-							<Table.Head>Next renewal</Table.Head>
-							<Table.Head>Status</Table.Head>
-							<Table.Head class="text-right">Actions</Table.Head>
-						</Table.Row>
-					</Table.Header>
-					<Table.Body>
-						{#each filtered as sub (sub.id)}
-							<Table.Row class={sub.status !== 'active' ? 'opacity-60' : ''}>
-								<Table.Cell>
-									<div class="font-medium">{sub.name}</div>
+				{#snippet sortHeader(label: string, key: SortKey, align: 'left' | 'right' = 'left')}
+					{@const Icon = sortIcon(key)}
+					<button
+						type="button"
+						class="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+						class:flex-row-reverse={align === 'right'}
+						onclick={() => toggleSort(key)}
+						aria-label={`Sort by ${label}`}
+					>
+						{label}
+						<Icon class="size-3.5 {sort?.key === key ? 'text-foreground' : ''}" />
+					</button>
+				{/snippet}
+
+				{#snippet rowActions(sub: Subscription)}
+					<Button variant="ghost" size="icon" title="Edit" onclick={() => openEdit(sub)}>
+						<Pencil class="size-4" />
+					</Button>
+
+					{#if sub.status === 'active'}
+						{#if !sub.isTrial}
+							<Button
+								variant="ghost"
+								size="icon"
+								title="Start trial"
+								onclick={() => openTrialDialogFor(sub)}
+							>
+								<Clock class="size-4" />
+							</Button>
+						{/if}
+
+						{#if sub.isTrial}
+							<form
+								method="POST"
+								action="?/cancelTrial"
+								use:enhance={() => {
+									return async ({ result, update }) => {
+										await update({ reset: false });
+										if (result.type === 'success') {
+											toast.success(`Cancelled trial for ${sub.name}`);
+											await invalidateAll();
+										} else if (result.type === 'failure') {
+											toast.error(String(result.data?.error ?? 'Could not cancel trial'));
+										}
+									};
+								}}
+							>
+								<input type="hidden" name="id" value={sub.id} />
+								<Button
+									type="submit"
+									variant="ghost"
+									size="icon"
+									title="Cancel trial"
+									class="text-amber-600 hover:text-amber-600 dark:text-amber-500 dark:hover:text-amber-500"
+								>
+									<ClockAlert class="size-4" />
+								</Button>
+							</form>
+						{/if}
+
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon"
+							title="Cancel subscription"
+							class="text-destructive hover:text-destructive"
+							onclick={() => confirmCancel(sub)}
+						>
+							{#if sub.cancelUrl}
+								<ExternalLink class="size-4" />
+							{:else}
+								<XCircle class="size-4" />
+							{/if}
+						</Button>
+					{:else}
+						<form
+							method="POST"
+							action="?/reactivate"
+							use:enhance={() => {
+								return async ({ result, update }) => {
+									await update({ reset: false });
+									if (result.type === 'success') {
+										toast.success(`Reactivated ${sub.name}`);
+										await invalidateAll();
+									}
+								};
+							}}
+						>
+							<input type="hidden" name="id" value={sub.id} />
+							<Button type="submit" variant="ghost" size="icon" title="Reactivate">
+								<RotateCcw class="size-4" />
+							</Button>
+						</form>
+					{/if}
+
+					<Button
+						variant="ghost"
+						size="icon"
+						title="Delete"
+						class="text-muted-foreground hover:text-destructive"
+						onclick={() => confirmDelete(sub)}
+					>
+						<Trash2 class="size-4" />
+					</Button>
+				{/snippet}
+
+				{#snippet trialBadge(sub: Subscription)}
+					{#if sub.isTrial && sub.trialEndsOn}
+						{@const trialDays = daysUntil(sub.trialEndsOn)}
+						<Badge
+							variant="outline"
+							class="mt-0.5 text-xs"
+							title="Trial converts to a paid subscription on this date unless cancelled"
+						>
+							{#if trialDays <= 3}
+								<ClockAlert class="mr-1 size-3" />
+							{:else}
+								<Clock class="mr-1 size-3" />
+							{/if}
+							{#if trialDays <= 0}
+								Trial ends today
+							{:else if trialDays === 1}
+								Trial ends tomorrow
+							{:else}
+								Trial ends in {trialDays} days
+							{/if}
+						</Badge>
+					{/if}
+				{/snippet}
+
+				<!-- Desktop / wide layout: full table, sortable headers. -->
+				<div class="hidden sm:block">
+					<Table.Root>
+						<Table.Header>
+							<Table.Row>
+								<Table.Head>{@render sortHeader('Name', 'name')}</Table.Head>
+								<Table.Head>Price</Table.Head>
+								<Table.Head class="text-right">
+									{@render sortHeader(`Monthly (${cur})`, 'monthly', 'right')}
+								</Table.Head>
+								<Table.Head>{@render sortHeader('Next renewal', 'nextRenewal')}</Table.Head>
+								<Table.Head>Status</Table.Head>
+								<Table.Head class="text-right">Actions</Table.Head>
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
+							{#each sorted as sub (sub.id)}
+								<Table.Row class={sub.status !== 'active' ? 'opacity-60' : ''}>
+									<Table.Cell>
+										<div class="font-medium">{sub.name}</div>
+										{#if sub.category}
+											<div class="text-xs text-muted-foreground">{sub.category}</div>
+										{/if}
+										{@render trialBadge(sub)}
+									</Table.Cell>
+									<Table.Cell>
+										<div>{formatMoney(sub.amount, sub.currency)}</div>
+										<div class="text-xs text-muted-foreground">{cycleLabel(sub)}</div>
+									</Table.Cell>
+									<Table.Cell class="text-right font-medium">
+										{sub.status === 'active' ? monthly(sub) : '—'}
+									</Table.Cell>
+									<Table.Cell class="text-sm">
+										{#if sub.nextRenewal}
+											{@const status = renewalStatus(sub.nextRenewal)}
+											<div class="text-muted-foreground">
+												{new Date(sub.nextRenewal).toLocaleDateString(undefined, {
+													day: 'numeric',
+													month: 'short',
+													year: 'numeric'
+												})}
+											</div>
+											{#if sub.status === 'active'}
+												<div class="text-xs {toneClass[status.tone]}">{status.label}</div>
+											{/if}
+										{:else}
+											<span class="text-muted-foreground">—</span>
+										{/if}
+									</Table.Cell>
+									<Table.Cell>
+										<Badge variant={statusVariant(sub.status)}>{sub.status}</Badge>
+									</Table.Cell>
+									<Table.Cell>
+										<div class="flex items-center justify-end gap-1">
+											{@render rowActions(sub)}
+										</div>
+									</Table.Cell>
+								</Table.Row>
+							{/each}
+						</Table.Body>
+					</Table.Root>
+				</div>
+
+				<!-- Mobile layout: one card per subscription, same data and actions. -->
+				<div class="divide-y sm:hidden">
+					{#each sorted as sub (sub.id)}
+						<div class="space-y-3 p-4 {sub.status !== 'active' ? 'opacity-60' : ''}">
+							<div class="flex items-start justify-between gap-3">
+								<div class="min-w-0">
+									<p class="truncate font-medium">{sub.name}</p>
 									{#if sub.category}
-										<div class="text-xs text-muted-foreground">{sub.category}</div>
+										<p class="text-xs text-muted-foreground">{sub.category}</p>
 									{/if}
-									{#if sub.isTrial && sub.trialEndsOn}
-										{@const trialDays = daysUntil(sub.trialEndsOn)}
-										<Badge
-											variant="outline"
-											class="mt-0.5 text-xs"
-											title="Trial converts to a paid subscription on this date unless cancelled"
-										>
-											{#if trialDays <= 3}
-												<ClockAlert class="mr-1 size-3" />
-											{:else}
-												<Clock class="mr-1 size-3" />
-											{/if}
-											{#if trialDays <= 0}
-												Trial ends today
-											{:else if trialDays === 1}
-												Trial ends tomorrow
-											{:else}
-												Trial ends in {trialDays} days
-											{/if}
-										</Badge>
-									{/if}
-								</Table.Cell>
-								<Table.Cell>
-									<div>{formatMoney(sub.amount, sub.currency)}</div>
-									<div class="text-xs text-muted-foreground">{cycleLabel(sub)}</div>
-								</Table.Cell>
-								<Table.Cell class="text-right font-medium">
-									{sub.status === 'active' ? monthly(sub) : '—'}
-								</Table.Cell>
-								<Table.Cell class="text-sm">
+									{@render trialBadge(sub)}
+								</div>
+								<Badge variant={statusVariant(sub.status)}>{sub.status}</Badge>
+							</div>
+
+							<div class="flex items-end justify-between gap-3 text-sm">
+								<div>
+									<p>{formatMoney(sub.amount, sub.currency)} <span class="text-muted-foreground">/ {cycleLabel(sub)}</span></p>
 									{#if sub.nextRenewal}
 										{@const status = renewalStatus(sub.nextRenewal)}
-										<div class="text-muted-foreground">
+										<p class="text-muted-foreground">
 											{new Date(sub.nextRenewal).toLocaleDateString(undefined, {
 												day: 'numeric',
 												month: 'short',
 												year: 'numeric'
 											})}
-										</div>
-										{#if sub.status === 'active'}
-											<div class="text-xs {toneClass[status.tone]}">{status.label}</div>
-										{/if}
-									{:else}
-										<span class="text-muted-foreground">—</span>
-									{/if}
-								</Table.Cell>
-								<Table.Cell>
-									<Badge variant={statusVariant(sub.status)}>{sub.status}</Badge>
-								</Table.Cell>
-								<Table.Cell>
-									<div class="flex items-center justify-end gap-1">
-										<Button variant="ghost" size="icon" title="Edit" onclick={() => openEdit(sub)}>
-											<Pencil class="size-4" />
-										</Button>
-
-										{#if sub.status === 'active'}
-											{#if sub.isTrial}
-												<form
-													method="POST"
-													action="?/cancelTrial"
-													use:enhance={() => {
-														return async ({ result, update }) => {
-															await update({ reset: false });
-															if (result.type === 'success') {
-																toast.success(`Cancelled trial for ${sub.name}`);
-																await invalidateAll();
-															} else if (result.type === 'failure') {
-																toast.error(String(result.data?.error ?? 'Could not cancel trial'));
-															}
-														};
-													}}
-												>
-													<input type="hidden" name="id" value={sub.id} />
-													<Button
-														type="submit"
-														variant="ghost"
-														size="icon"
-														title="Cancel trial"
-														class="text-amber-600 hover:text-amber-600 dark:text-amber-500 dark:hover:text-amber-500"
-													>
-														<ClockAlert class="size-4" />
-													</Button>
-												</form>
+											{#if sub.status === 'active'}
+												· <span class={toneClass[status.tone]}>{status.label}</span>
 											{/if}
+										</p>
+									{/if}
+								</div>
+								<p class="font-semibold">
+									{sub.status === 'active' ? monthly(sub) : '—'}
+									<span class="text-xs font-normal text-muted-foreground">/mo</span>
+								</p>
+							</div>
 
-											<Button
-												type="button"
-												variant="ghost"
-												size="icon"
-												title="Cancel subscription"
-												class="text-destructive hover:text-destructive"
-												onclick={() => confirmCancel(sub)}
-											>
-												{#if sub.cancelUrl}
-													<ExternalLink class="size-4" />
-												{:else}
-													<XCircle class="size-4" />
-												{/if}
-											</Button>
-										{:else}
-											<form
-												method="POST"
-												action="?/reactivate"
-												use:enhance={() => {
-													return async ({ result, update }) => {
-														await update({ reset: false });
-														if (result.type === 'success') {
-															toast.success(`Reactivated ${sub.name}`);
-															await invalidateAll();
-														}
-													};
-												}}
-											>
-												<input type="hidden" name="id" value={sub.id} />
-												<Button type="submit" variant="ghost" size="icon" title="Reactivate">
-													<RotateCcw class="size-4" />
-												</Button>
-											</form>
-										{/if}
-
-										<Button
-											variant="ghost"
-											size="icon"
-											title="Delete"
-											class="text-muted-foreground hover:text-destructive"
-											onclick={() => confirmDelete(sub)}
-										>
-											<Trash2 class="size-4" />
-										</Button>
-									</div>
-								</Table.Cell>
-							</Table.Row>
-						{/each}
-					</Table.Body>
-				</Table.Root>
+							<div class="flex items-center justify-end gap-1 border-t pt-2">
+								{@render rowActions(sub)}
+							</div>
+						</div>
+					{/each}
+				</div>
 			{/if}
 		</Card.Content>
 	</Card.Root>
@@ -562,6 +706,7 @@
 			action={isEditing ? '?/update' : '?/create'}
 			class="space-y-4"
 			use:enhance={() => {
+				formErrors = {};
 				return async ({ result, update }) => {
 					await update({ reset: false });
 					if (result.type === 'success') {
@@ -569,6 +714,7 @@
 						dialogOpen = false;
 						await invalidateAll();
 					} else if (result.type === 'failure') {
+						formErrors = (result.data?.errors as FieldErrors) ?? {};
 						toast.error(String(result.data?.error ?? 'Something went wrong'));
 					}
 				};
@@ -590,6 +736,12 @@
 				{/each}
 			</datalist>
 
+			<datalist id="categories">
+				{#each allCategories as c (c)}
+					<option value={c}></option>
+				{/each}
+			</datalist>
+
 			<div class="grid gap-2">
 				<Label for="name">Name</Label>
 				<Input
@@ -600,13 +752,24 @@
 					required
 					bind:value={form.name}
 					onblur={onNameBlur}
+					oninput={() => clearFieldError('name')}
+					aria-invalid={!!formErrors.name}
 				/>
+				{#if formErrors.name}
+					<p class="text-destructive text-xs">{formErrors.name}</p>
+				{/if}
 			</div>
 
 			<div class="grid grid-cols-2 gap-4">
 				<div class="grid gap-2">
 					<Label for="category">Category</Label>
-					<Input id="category" name="category" placeholder="Streaming" bind:value={form.category} />
+					<Input
+						id="category"
+						name="category"
+						list="categories"
+						placeholder="Streaming"
+						bind:value={form.category}
+					/>
 				</div>
 				<div class="grid gap-2">
 					<Label for="status">Status</Label>
@@ -630,11 +793,22 @@
 						placeholder="9.99"
 						required
 						bind:value={form.amount}
+						oninput={() => clearFieldError('amount')}
+						aria-invalid={!!formErrors.amount}
 					/>
+					{#if formErrors.amount}
+						<p class="text-destructive text-xs">{formErrors.amount}</p>
+					{/if}
 				</div>
 				<div class="grid gap-2">
 					<Label for="currency">Currency</Label>
-					<select id="currency" name="currency" class={selectClass} bind:value={form.currency}>
+					<select
+						id="currency"
+						name="currency"
+						class={selectClass}
+						bind:value={form.currency}
+						aria-invalid={!!formErrors.currency}
+					>
 						{#each CURRENCIES as c (c)}
 							<option value={c}>{c}</option>
 						{/each}
@@ -645,7 +819,13 @@
 			<div class="grid grid-cols-2 gap-4">
 				<div class="grid gap-2">
 					<Label for="cycle">Billing cycle</Label>
-					<select id="cycle" name="cycle" class={selectClass} bind:value={form.cycle}>
+					<select
+						id="cycle"
+						name="cycle"
+						class={selectClass}
+						bind:value={form.cycle}
+						aria-invalid={!!formErrors.cycle}
+					>
 						{#each BILLING_CYCLES as c (c)}
 							<option value={c}>{c}</option>
 						{/each}
@@ -660,7 +840,12 @@
 						min="1"
 						step="1"
 						bind:value={form.cycleCount}
+						oninput={() => clearFieldError('cycleCount')}
+						aria-invalid={!!formErrors.cycleCount}
 					/>
+					{#if formErrors.cycleCount}
+						<p class="text-destructive text-xs">{formErrors.cycleCount}</p>
+					{/if}
 				</div>
 			</div>
 
@@ -683,7 +868,12 @@
 					type="url"
 					placeholder="https://…"
 					bind:value={form.cancelUrl}
+					oninput={() => clearFieldError('cancelUrl')}
+					aria-invalid={!!formErrors.cancelUrl}
 				/>
+				{#if formErrors.cancelUrl}
+					<p class="text-destructive text-xs">{formErrors.cancelUrl}</p>
+				{/if}
 			</div>
 
 			<div class="grid gap-2">
@@ -854,7 +1044,12 @@
 	</AlertDialog.Content>
 </AlertDialog.Root>
 
-<Dialog.Root bind:open={trialDialogOpen}>
+<Dialog.Root
+	bind:open={trialDialogOpen}
+	onOpenChange={(open) => {
+		if (!open) lockedTrialSub = null;
+	}}
+>
 	<Dialog.Content class="sm:max-w-md">
 		<Dialog.Header>
 			<Dialog.Title>Start trial</Dialog.Title>
@@ -869,7 +1064,7 @@
 			(s) => s.status === 'active' && !s.isTrial
 		)}
 
-		{#if eligibleSubs.length === 0}
+		{#if lockedTrialSub === null && eligibleSubs.length === 0}
 			<p class="text-muted-foreground text-sm">
 				No eligible subscriptions. A subscription must be active and not already
 				on trial.
@@ -888,9 +1083,9 @@
 					return async ({ result, update }) => {
 						await update({ reset: false });
 						if (result.type === 'success') {
-							const started = data.subscriptions.find(
-								(s) => String(s.id) === pendingTrialSubId
-							);
+							const started =
+								lockedTrialSub ??
+								data.subscriptions.find((s) => String(s.id) === pendingTrialSubId);
 							toast.success(`Trial set for ${started?.name ?? 'subscription'}`);
 							trialDialogOpen = false;
 							await invalidateAll();
@@ -902,21 +1097,31 @@
 			>
 				<div class="grid gap-2">
 					<Label for="trialSubId">Subscription</Label>
-					<select
-						id="trialSubId"
-						name="id"
-						bind:value={pendingTrialSubId}
-						class={selectClass}
-						required
-					>
-						{#each eligibleSubs as s (s.id)}
-							<option value={s.id}>
-								{s.name} — {formatMoney(s.amount, s.currency)}/{s.cycleCount > 1
-									? `${s.cycleCount} ${s.cycle}`
-									: s.cycle}
-							</option>
-						{/each}
-					</select>
+					{#if lockedTrialSub}
+						<input type="hidden" name="id" value={lockedTrialSub.id} />
+						<p class="border-input bg-muted/30 flex h-9 items-center rounded-md border px-3 text-sm">
+							{lockedTrialSub.name} — {formatMoney(lockedTrialSub.amount, lockedTrialSub.currency)}/{lockedTrialSub.cycleCount >
+							1
+								? `${lockedTrialSub.cycleCount} ${lockedTrialSub.cycle}`
+								: lockedTrialSub.cycle}
+						</p>
+					{:else}
+						<select
+							id="trialSubId"
+							name="id"
+							bind:value={pendingTrialSubId}
+							class={selectClass}
+							required
+						>
+							{#each eligibleSubs as s (s.id)}
+								<option value={s.id}>
+									{s.name} — {formatMoney(s.amount, s.currency)}/{s.cycleCount > 1
+										? `${s.cycleCount} ${s.cycle}`
+										: s.cycle}
+								</option>
+							{/each}
+						</select>
+					{/if}
 				</div>
 				<div class="grid gap-2">
 					<Label for="trialEndsOn">Trial ends on</Label>
