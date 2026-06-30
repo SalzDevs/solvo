@@ -1,6 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { REGISTRY } from '$lib/registry';
 import { today } from '$lib/renewals';
+import { isSafeUrl } from '$lib/url';
 import {
 	cancelSubscription,
 	createSubscription,
@@ -48,15 +49,6 @@ type ParseResult =
 	| { ok: true; value: SubscriptionInput }
 	| { ok: false; errors: FieldErrors };
 
-function isValidUrl(value: string): boolean {
-	try {
-		new URL(value);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
 function parseInput(form: FormData): ParseResult {
 	const errors: FieldErrors = {};
 
@@ -82,8 +74,8 @@ function parseInput(form: FormData): ParseResult {
 	const cycleCount = Math.max(1, Math.floor(cycleCountNum) || 1);
 
 	const cancelUrl = optional(form, 'cancelUrl');
-	if (cancelUrl && !isValidUrl(cancelUrl)) {
-		errors.cancelUrl = 'Enter a valid URL (including https://).';
+	if (cancelUrl && !isSafeUrl(cancelUrl)) {
+		errors.cancelUrl = 'Enter a valid http:// or https:// URL.';
 	}
 
 	if (Object.keys(errors).length > 0) return { ok: false, errors };

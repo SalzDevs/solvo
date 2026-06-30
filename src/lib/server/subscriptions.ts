@@ -7,10 +7,21 @@ import type {
 	Subscription,
 	SubscriptionInput
 } from '$lib/types';
+import { isSafeUrl } from '$lib/url';
 import { getDb, rowToSubscription, type SubscriptionRow } from './db';
 
 function now(): string {
 	return new Date().toISOString();
+}
+
+/**
+ * Defense in depth: the form action already rejects unsafe schemes with a
+ * field-level error, but this is the one chokepoint every write path (form
+ * submit, import) funnels through, so a `javascript:`/`data:` URL can never
+ * reach the database even if a caller forgets to validate upstream.
+ */
+function sanitizeCancelUrl(url: string | null): string | null {
+	return url && isSafeUrl(url) ? url : null;
 }
 
 /**
@@ -112,7 +123,7 @@ export function createSubscription(input: SubscriptionInput): Subscription {
 			$startDate: input.startDate,
 			$nextRenewal: input.nextRenewal,
 			$status: input.status,
-			$cancelUrl: input.cancelUrl,
+			$cancelUrl: sanitizeCancelUrl(input.cancelUrl),
 			$cancelNotes: input.cancelNotes,
 			$notes: input.notes,
 			$isTrial: input.isTrial ? 1 : 0,
@@ -146,7 +157,7 @@ export function updateSubscription(id: number, input: SubscriptionInput): Subscr
 			$startDate: input.startDate,
 			$nextRenewal: input.nextRenewal,
 			$status: input.status,
-			$cancelUrl: input.cancelUrl,
+			$cancelUrl: sanitizeCancelUrl(input.cancelUrl),
 			$cancelNotes: input.cancelNotes,
 			$notes: input.notes,
 			$isTrial: input.isTrial ? 1 : 0,
@@ -250,7 +261,7 @@ export function importData(bundle: ExportBundle): void {
 				$startDate: s.startDate,
 				$nextRenewal: s.nextRenewal,
 				$status: s.status,
-				$cancelUrl: s.cancelUrl,
+				$cancelUrl: sanitizeCancelUrl(s.cancelUrl),
 				$cancelNotes: s.cancelNotes,
 				$cancelledAt: s.cancelledAt,
 				$notes: s.notes,

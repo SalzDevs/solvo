@@ -171,13 +171,7 @@ Most of the interesting logic (`cost.ts`, `renewals.ts`, `subscriptions-filter.t
 
 ## Contributing
 
-Issues and pull requests are welcome. A few guidelines to keep things smooth:
-
-1. Keep domain logic (`src/lib/*.ts`) pure and unit-tested — avoid reaching into Svelte components or the database from these files.
-2. Run `bun test` and `bun run check` before opening a PR; both must pass cleanly.
-3. Keep PRs focused — small, reviewable changes are much easier to merge than large ones.
-
-If you're proposing a bigger feature (new data fields, a new page, etc.), please open an issue first to discuss the approach.
+Issues and pull requests are welcome — see [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the project layout, local setup, and what to run before opening a PR.
 
 ## License
 
