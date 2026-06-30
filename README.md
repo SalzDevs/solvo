@@ -12,9 +12,19 @@ _Solvo_ — Latin: to release, to set free, to pay off.
 [![Built with Bun](https://img.shields.io/badge/built%20with-Bun-fbf0df?logo=bun&logoColor=000)](https://bun.sh)
 [![SvelteKit](https://img.shields.io/badge/SvelteKit-FF3E00?logo=svelte&logoColor=fff)](https://svelte.dev)
 
-[Features](#features) · [Getting started](#getting-started) · [How cancel works](#how-cancel-works) · [Tech stack](#tech-stack) · [Contributing](#contributing)
+[Features](#features) · [Demo](#demo) · [Getting started](#getting-started) · [How cancel works](#how-cancel-works) · [Tech stack](#tech-stack) · [Contributing](#contributing)
 
 </div>
+
+---
+
+## Demo
+
+A 90-second walkthrough of the app — dashboard with totals and trial tracking, the search/filter bar on the subscriptions table, the settings page, and the assisted cancel flow with its typed-confirmation safety net:
+
+<video src="./docs/solvo-demo-web.mp4" poster="./docs/contact-sheet.jpg" controls width="100%"></video>
+
+*Recorded against the demo data (`bun run demo`) — no real subscriptions were harmed in the making of this video.*
 
 ---
 
