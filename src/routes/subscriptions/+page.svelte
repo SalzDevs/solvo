@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { invalidateAll } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import * as Card from '$lib/components/ui/card';
@@ -13,8 +14,19 @@
 	import { formatMoney, normalize } from '$lib/cost';
 	import { daysUntil, nextRenewalFor, renewalStatus, type RenewalTone } from '$lib/renewals';
 	import { findProvider } from '$lib/registry';
+	import {
+		categoryCounts,
+		DEFAULT_FILTERS,
+		FILTER_STATUSES,
+		filterSubscriptions,
+		hasActiveFilters,
+		parseCategories,
+		parseFilterStatus,
+		uniqueCategories,
+		type FilterStatus
+	} from '$lib/subscriptions-filter';
 	import { BILLING_CYCLES, CURRENCIES, type BillingCycle, type Subscription } from '$lib/types';
-	import { ExternalLink, AlertCircle, CheckCircle2, Clock, ClockAlert, Pencil, Plus, RotateCcw, Trash2, XCircle } from '@lucide/svelte';
+	import { ExternalLink, AlertCircle, CheckCircle2, Clock, ClockAlert, Pencil, Plus, RotateCcw, Search, Trash2, X, XCircle } from '@lucide/svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -213,6 +225,49 @@
 			? `That doesn't match. Type exactly: ${cancelPhrase}`
 			: `Type ${cancelPhrase} to confirm you cancelled with the provider.`;
 	}
+
+	// --- Filter state -----------------------------------------------------------
+	// Filters live in the URL so they're shareable, survive reload, and the
+	// back button works as expected. Initialised from `page.url.searchParams`
+	// and synced back via the effect below. The `lastWrittenSearch` non-reactive
+	// variable breaks the otherwise-infinite loop between state changes and
+	// URL changes (same pattern used in settings for theme/currency sync).
+	let query = $state(page.url.searchParams.get('q') ?? '');
+	let status = $state<FilterStatus>(parseFilterStatus(page.url.searchParams.get('status')));
+	let categories = $state<string[]>(parseCategories(page.url.searchParams.get('cat')));
+	let lastWrittenSearch = page.url.search.replace(/^\?/, '');
+
+	$effect(() => {
+		const params = new URLSearchParams();
+		if (query) params.set('q', query);
+		if (status !== 'all') params.set('status', status);
+		if (categories.length > 0) params.set('cat', categories.join(','));
+		const search = params.toString();
+		if (search === lastWrittenSearch) return;
+		lastWrittenSearch = search;
+		const url = page.url.pathname + (search ? `?${search}` : '');
+		goto(url, { replaceState: true, keepFocus: true, noScroll: true });
+	});
+
+	const filters = $derived({ query, status, categories });
+	const filtered = $derived(filterSubscriptions(data.subscriptions, filters));
+	const filtersActive = $derived(hasActiveFilters(filters));
+	const allCategories = $derived(uniqueCategories(data.subscriptions));
+	const categoryCount = $derived(categoryCounts(data.subscriptions));
+
+	function clearFilters() {
+		query = '';
+		status = 'all';
+		categories = [];
+	}
+
+	function toggleCategory(cat: string) {
+		categories = categories.includes(cat) ? categories.filter((c) => c !== cat) : [...categories, cat];
+	}
+
+	function statusLabel(s: FilterStatus): string {
+		return s.charAt(0).toUpperCase() + s.slice(1);
+	}
 </script>
 
 <div class="space-y-6">
@@ -233,11 +288,103 @@
 		</div>
 	</div>
 
+	{#if data.subscriptions.length > 0}
+		<div class="space-y-3" data-testid="subscriptions-filters">
+			<div class="relative">
+				<Search
+					class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+				/>
+				<Input
+					type="text"
+					placeholder="Search by name, category, or notes…"
+					class="pl-9"
+					bind:value={query}
+					data-testid="subscriptions-search"
+				/>
+				{#if query}
+					<button
+						type="button"
+						class="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+						onclick={() => (query = '')}
+						title="Clear search"
+						aria-label="Clear search"
+					>
+						<X class="size-3.5" />
+					</button>
+				{/if}
+			</div>
+
+			<div class="flex flex-wrap items-center gap-2">
+				<span class="text-xs font-medium text-muted-foreground">Status:</span>
+				{#each FILTER_STATUSES as s (s)}
+					{@const active = status === s}
+					<button
+						type="button"
+						class="inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-colors"
+						class:bg-primary={active}
+						class:text-primary-foreground={active}
+						class:hover:bg-accent={!active}
+						class:hover:text-accent-foreground={!active}
+						onclick={() => (status = s)}
+						aria-pressed={active}
+					>
+						{statusLabel(s)}
+					</button>
+				{/each}
+			</div>
+
+			{#if allCategories.length > 0}
+				<div class="flex flex-wrap items-center gap-2">
+					<span class="text-xs font-medium text-muted-foreground">Category:</span>
+					{#each allCategories as cat (cat)}
+						{@const active = categories.includes(cat)}
+						<button
+							type="button"
+							class="inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-colors"
+							class:bg-primary={active}
+							class:text-primary-foreground={active}
+							class:hover:bg-accent={!active}
+							class:hover:text-accent-foreground={!active}
+							onclick={() => toggleCategory(cat)}
+							aria-pressed={active}
+						>
+							{cat}
+							<span class="ml-1 opacity-70">({categoryCount.get(cat) ?? 0})</span>
+						</button>
+					{/each}
+				</div>
+			{/if}
+
+			{#if filtersActive}
+				<div class="flex items-center gap-3 text-sm text-muted-foreground">
+					<span>
+						Showing <strong class="text-foreground">{filtered.length}</strong> of
+						{data.subscriptions.length} subscriptions
+					</span>
+					<Button variant="ghost" size="sm" onclick={clearFilters}>
+						<X class="size-3" />
+						Clear filters
+					</Button>
+				</div>
+			{/if}
+		</div>
+	{/if}
+
 	<Card.Root>
 		<Card.Content class="p-0">
 			{#if data.subscriptions.length === 0}
 				<div class="py-16 text-center text-sm text-muted-foreground">
 					Nothing here yet. Add your first subscription to get started.
+				</div>
+			{:else if filtered.length === 0}
+				<div class="space-y-3 py-16 text-center">
+					<p class="text-sm text-muted-foreground" data-testid="no-matches">
+						No subscriptions match your filters.
+					</p>
+					<Button variant="outline" size="sm" onclick={clearFilters}>
+						<X class="size-3" />
+						Clear filters
+					</Button>
 				</div>
 			{:else}
 				<Table.Root>
@@ -252,7 +399,7 @@
 						</Table.Row>
 					</Table.Header>
 					<Table.Body>
-						{#each data.subscriptions as sub (sub.id)}
+						{#each filtered as sub (sub.id)}
 							<Table.Row class={sub.status !== 'active' ? 'opacity-60' : ''}>
 								<Table.Cell>
 									<div class="font-medium">{sub.name}</div>

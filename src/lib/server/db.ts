@@ -118,7 +118,11 @@ const DEMO_SUBS: DemoSeed[] = [
 	{ name: 'PlayStation Plus', category: 'Gaming', amount: 6999, currency: 'USD', cycle: 'yearly', cycleCount: 1, renewalOffset: 45, cancelUrl: 'https://www.playstation.com/account/' },
 	{ name: 'Amazon Prime', category: 'Shopping', amount: 4990, currency: 'EUR', cycle: 'yearly', cycleCount: 1, renewalOffset: 70, cancelUrl: 'https://www.amazon.com/gp/primecentral' },
 	{ name: 'Disney+', category: 'Streaming', amount: 899, currency: 'USD', cycle: 'monthly', cycleCount: 1, renewalOffset: 9, status: 'cancelled', cancelUrl: 'https://www.disneyplus.com/account/subscription' },
-	{ name: 'Linear', category: 'Software', amount: 1000, currency: 'USD', cycle: 'monthly', cycleCount: 1, renewalOffset: 14, trialEndsIn: 5, cancelUrl: 'https://linear.app/settings/billing' }
+	{ name: 'Linear', category: 'Software', amount: 1000, currency: 'USD', cycle: 'monthly', cycleCount: 1, renewalOffset: 14, trialEndsIn: 5, cancelUrl: 'https://linear.app/settings/billing' },
+	{ name: 'GitHub Copilot', category: 'Software', amount: 1000, currency: 'USD', cycle: 'monthly', cycleCount: 1, renewalOffset: 14, cancelUrl: 'https://github.com/settings/billing' },
+	{ name: '1Password', category: 'Security', amount: 299, currency: 'USD', cycle: 'monthly', cycleCount: 1, renewalOffset: 5, cancelUrl: 'https://my.1password.com/billing' },
+	{ name: 'The New York Times', category: 'News', amount: 400, currency: 'USD', cycle: 'monthly', cycleCount: 1, renewalOffset: 18, cancelUrl: 'https://myaccount.nytimes.com/seg/cancellation' },
+	{ name: 'Figma', category: 'Design', amount: 1500, currency: 'USD', cycle: 'monthly', cycleCount: 1, renewalOffset: 7, cancelUrl: 'https://www.figma.com/settings/billing' }
 ];
 
 function seedDemo(database: Database): void {
