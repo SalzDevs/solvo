@@ -20,9 +20,9 @@ _Solvo_ — Latin: to release, to set free, to pay off.
 
 ## Demo
 
-A 90-second walkthrough of the app — dashboard with totals and trial tracking, the search/filter bar on the subscriptions table, the settings page, and the assisted cancel flow with its typed-confirmation safety net:
+A 27-second walkthrough of the app — dashboard with totals and trial tracking, the search/filter bar on the subscriptions table, and the assisted cancel flow with its typed-confirmation safety net:
 
-<video src="./docs/solvo-demo-web.mp4" poster="./docs/contact-sheet.jpg" controls width="100%"></video>
+<video src="./docs/solvo-demo.mp4" poster="./docs/demo-poster.jpg" controls width="100%"></video>
 
 *Recorded against the demo data (`bun run demo`) — no real subscriptions were harmed in the making of this video.*
 
