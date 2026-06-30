@@ -56,16 +56,35 @@ A bundled [registry](./src/lib/registry.ts) of 20+ popular services (Netflix, Sp
 
 ## Getting started
 
-### Prerequisites
+### Quick install
 
-- [Bun](https://bun.sh) (latest stable release recommended)
-
-### Installation
+The fastest way to get Solvo running. This installs [Bun](https://bun.sh) if you don't already have it, downloads Solvo, installs its dependencies, and starts it — one command, nothing to configure:
 
 ```bash
-git clone git@github.com:SalzDevs/solvo.git
+curl -fsSL https://raw.githubusercontent.com/SalzDevs/solvo/main/install.sh | bash
+```
+
+Solvo installs into `~/solvo` and opens at [http://localhost:5173](http://localhost:5173). A few things you can tweak with environment variables:
+
+```bash
+# Install somewhere else
+SOLVO_DIR=~/apps/solvo curl -fsSL https://raw.githubusercontent.com/SalzDevs/solvo/main/install.sh | bash
+
+# Just install — don't start the dev server
+SOLVO_NO_START=1 curl -fsSL https://raw.githubusercontent.com/SalzDevs/solvo/main/install.sh | bash
+```
+
+Re-running the command later reinstalls dependencies in place; it never touches your `solvo.db`, so your data is safe.
+
+Always read scripts before piping them into `bash` — you can review [`install.sh`](./install.sh) first if you'd like.
+
+### Manual install (for development)
+
+If you're planning to contribute or just prefer to do it by hand:
+
+```bash
+bun create SalzDevs/solvo solvo   # or: git clone git@github.com:SalzDevs/solvo.git
 cd solvo
-bun install
 bun run dev
 ```
 
@@ -162,4 +181,4 @@ If you're proposing a bigger feature (new data fields, a new page, etc.), please
 
 ## License
 
-[MIT](./LICENSE) © [SalzDevs](https://github.com/SalzDevs)
+[MIT](./LICENSE)
