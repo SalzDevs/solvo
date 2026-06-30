@@ -56,11 +56,20 @@ export function sortSubscriptions(
 		.map((x) => x.s);
 }
 
-/** Click handler logic: same key toggles direction, a new key starts at a
- *  sensible default (cheapest/earliest first for cost & dates, A-Z for name). */
+/** Default direction the first click on a column applies. Name and renewal
+ *  date read naturally A-Z / soonest-first; monthly cost reads naturally
+ *  most-expensive-first, matching the dashboard's "Most expensive" framing. */
+const DEFAULT_DIRECTION: Record<SortKey, SortDirection> = {
+	name: 'asc',
+	monthly: 'desc',
+	nextRenewal: 'asc'
+};
+
+/** Click handler logic: same key toggles direction, a new key starts at its
+ *  column-specific default direction. */
 export function nextSortState(current: SortState | null, key: SortKey): SortState {
 	if (current && current.key === key) {
 		return { key, direction: current.direction === 'asc' ? 'desc' : 'asc' };
 	}
-	return { key, direction: 'asc' };
+	return { key, direction: DEFAULT_DIRECTION[key] };
 }

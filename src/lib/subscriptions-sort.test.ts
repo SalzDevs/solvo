@@ -91,11 +91,20 @@ describe('sortSubscriptions — nextRenewal', () => {
 });
 
 describe('nextSortState', () => {
-	test('starts ascending when sorting by a new key', () => {
+	test('name and nextRenewal default to ascending on first click', () => {
 		expect(nextSortState(null, 'name')).toEqual({ key: 'name', direction: 'asc' });
+		expect(nextSortState(null, 'nextRenewal')).toEqual({ key: 'nextRenewal', direction: 'asc' });
 		expect(nextSortState({ key: 'monthly', direction: 'desc' }, 'name')).toEqual({
 			key: 'name',
 			direction: 'asc'
+		});
+	});
+
+	test('monthly defaults to descending on first click (most expensive first)', () => {
+		expect(nextSortState(null, 'monthly')).toEqual({ key: 'monthly', direction: 'desc' });
+		expect(nextSortState({ key: 'name', direction: 'desc' }, 'monthly')).toEqual({
+			key: 'monthly',
+			direction: 'desc'
 		});
 	});
 
@@ -106,6 +115,10 @@ describe('nextSortState', () => {
 		});
 		expect(nextSortState({ key: 'name', direction: 'desc' }, 'name')).toEqual({
 			key: 'name',
+			direction: 'asc'
+		});
+		expect(nextSortState({ key: 'monthly', direction: 'desc' }, 'monthly')).toEqual({
+			key: 'monthly',
 			direction: 'asc'
 		});
 	});

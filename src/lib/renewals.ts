@@ -112,5 +112,6 @@ export function renewalStatus(iso: string, from: string = today()): RenewalStatu
 	if (days === 1) return { days, label: 'tomorrow', tone: 'soon' };
 	if (days <= 7) return { days, label: `in ${days} days`, tone: 'soon' };
 	if (days <= 30) return { days, label: `in ${days} days`, tone: 'later' };
-	return { days, label: `in ${Math.round(days / 30.44)} months`, tone: 'later' };
+	const months = Math.round(days / 30.44);
+	return { days, label: `in ${months} ${months === 1 ? 'month' : 'months'}`, tone: 'later' };
 }

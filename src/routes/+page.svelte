@@ -34,6 +34,13 @@
 		return formatMoney(Math.round(minor), cur);
 	}
 
+	// "Manage" links deep-link straight to the matching row instead of just
+	// landing on the unfiltered list, since the user already told us which
+	// subscription they care about by clicking it here.
+	function manageHref(name: string): string {
+		return `/subscriptions?q=${encodeURIComponent(name)}`;
+	}
+
 	// The single most actionable insight on the dashboard: what's actually
 	// costing the most, ranked, so the user knows what to look at first.
 	const topSpendersList = $derived(
@@ -189,7 +196,9 @@
 								</div>
 								<div class="flex shrink-0 items-center gap-2">
 									<span class="text-sm font-semibold">{money(item.perMonth)}/mo</span>
-									<Button href="/subscriptions" variant="ghost" size="sm">Manage</Button>
+									<Button href={manageHref(item.subscription.name)} variant="ghost" size="sm">
+										Manage
+									</Button>
 								</div>
 							</li>
 						{/each}
@@ -232,7 +241,7 @@
 								>
 									{r.label}
 								</span>
-								<Button href="/subscriptions" variant="ghost" size="sm">
+								<Button href={manageHref(r.subscription.name)} variant="ghost" size="sm">
 									Manage
 								</Button>
 							</li>
@@ -297,7 +306,10 @@
 					{:else}
 						{#each data.upcoming as s (s.id)}
 							{@const status = renewalStatus(s.nextRenewal!)}
-							<div class="flex items-center justify-between rounded-md border px-3 py-2">
+							<a
+								href={manageHref(s.name)}
+								class="hover:bg-muted/30 flex items-center justify-between rounded-md border px-3 py-2"
+							>
 								<div>
 									<p class="text-sm font-medium">{s.name}</p>
 									<p class="text-xs {toneClass[status.tone]}">
@@ -305,7 +317,7 @@
 									</p>
 								</div>
 								<Badge variant="secondary">{formatMoney(s.amount, s.currency)}</Badge>
-							</div>
+							</a>
 						{/each}
 					{/if}
 				</Card.Content>

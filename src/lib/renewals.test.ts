@@ -84,4 +84,13 @@ describe('renewalStatus', () => {
 	it('treats distant dates as later', () => {
 		expect(renewalStatus('2026-09-01', '2026-06-01').tone).toBe('later');
 	});
+
+	it('singularizes "month" when it rounds to exactly one', () => {
+		// 45 days from the reference date rounds to 1 month (45 / 30.44 ≈ 1.48 -> 1).
+		expect(renewalStatus('2026-07-16', '2026-06-01').label).toBe('in 1 month');
+	});
+
+	it('pluralizes "months" for two or more', () => {
+		expect(renewalStatus('2026-12-01', '2026-06-01').label).toBe('in 6 months');
+	});
 });

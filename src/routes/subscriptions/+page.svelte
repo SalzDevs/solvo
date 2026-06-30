@@ -25,7 +25,13 @@
 		uniqueCategories,
 		type FilterStatus
 	} from '$lib/subscriptions-filter';
-	import { nextSortState, sortSubscriptions, type SortKey, type SortState } from '$lib/subscriptions-sort';
+	import {
+		nextSortState,
+		sortSubscriptions,
+		type SortDirection,
+		type SortKey,
+		type SortState
+	} from '$lib/subscriptions-sort';
 	import { BILLING_CYCLES, CURRENCIES, type BillingCycle, type Subscription } from '$lib/types';
 	import type { FieldErrors } from './+page.server';
 	import {
@@ -316,6 +322,27 @@
 		return sort.direction === 'asc' ? ArrowUp : ArrowDown;
 	}
 
+	/** `aria-sort` for the `<th>` itself — separate from the icon so screen
+	 *  readers get the standard table-sort announcement, not just sighted users. */
+	function ariaSort(key: SortKey): 'ascending' | 'descending' | 'none' {
+		if (!sort || sort.key !== key) return 'none';
+		return sort.direction === 'asc' ? 'ascending' : 'descending';
+	}
+
+	// The column headers (and their sort buttons) are hidden on mobile along
+	// with the table, so this <select> is the only way to change sort order
+	// below the sm breakpoint — without it, mobile is stuck on the default.
+	const mobileSortValue = $derived(sort ? `${sort.key}:${sort.direction}` : 'default');
+	function onMobileSortChange(event: Event) {
+		const value = (event.target as HTMLSelectElement).value;
+		if (value === 'default') {
+			sort = null;
+			return;
+		}
+		const [key, direction] = value.split(':') as [SortKey, SortDirection];
+		sort = { key, direction };
+	}
+
 	function clearFilters() {
 		query = '';
 		status = 'all';
@@ -583,12 +610,14 @@
 					<Table.Root>
 						<Table.Header>
 							<Table.Row>
-								<Table.Head>{@render sortHeader('Name', 'name')}</Table.Head>
+								<Table.Head aria-sort={ariaSort('name')}>{@render sortHeader('Name', 'name')}</Table.Head>
 								<Table.Head>Price</Table.Head>
-								<Table.Head class="text-right">
+								<Table.Head class="text-right" aria-sort={ariaSort('monthly')}>
 									{@render sortHeader(`Monthly (${cur})`, 'monthly', 'right')}
 								</Table.Head>
-								<Table.Head>{@render sortHeader('Next renewal', 'nextRenewal')}</Table.Head>
+								<Table.Head aria-sort={ariaSort('nextRenewal')}>
+									{@render sortHeader('Next renewal', 'nextRenewal')}
+								</Table.Head>
 								<Table.Head>Status</Table.Head>
 								<Table.Head class="text-right">Actions</Table.Head>
 							</Table.Row>
@@ -642,8 +671,28 @@
 				</div>
 
 				<!-- Mobile layout: one card per subscription, same data and actions. -->
-				<div class="divide-y sm:hidden">
-					{#each sorted as sub (sub.id)}
+				<div class="sm:hidden">
+					<div class="flex items-center justify-between gap-2 border-b p-3">
+						<Label for="mobileSort" class="shrink-0 text-xs font-medium text-muted-foreground">
+							Sort by
+						</Label>
+						<select
+							id="mobileSort"
+							class={selectClass}
+							value={mobileSortValue}
+							onchange={onMobileSortChange}
+						>
+							<option value="default">Default order</option>
+							<option value="name:asc">Name (A–Z)</option>
+							<option value="name:desc">Name (Z–A)</option>
+							<option value="monthly:desc">Monthly: high to low</option>
+							<option value="monthly:asc">Monthly: low to high</option>
+							<option value="nextRenewal:asc">Next renewal: soonest</option>
+							<option value="nextRenewal:desc">Next renewal: latest</option>
+						</select>
+					</div>
+					<div class="divide-y">
+						{#each sorted as sub (sub.id)}
 						<div class="space-y-3 p-4 {sub.status !== 'active' ? 'opacity-60' : ''}">
 							<div class="flex items-start justify-between gap-3">
 								<div class="min-w-0">
@@ -683,7 +732,8 @@
 								{@render rowActions(sub)}
 							</div>
 						</div>
-					{/each}
+						{/each}
+					</div>
 				</div>
 			{/if}
 		</Card.Content>
@@ -705,6 +755,7 @@
 			method="POST"
 			action={isEditing ? '?/update' : '?/create'}
 			class="space-y-4"
+			novalidate
 			use:enhance={() => {
 				formErrors = {};
 				return async ({ result, update }) => {
