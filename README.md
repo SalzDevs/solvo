@@ -22,7 +22,20 @@ _Solvo_ — Latin: to release, to set free, to pay off.
 
 A 27-second walkthrough of the app — dashboard with totals and trial tracking, the search/filter bar on the subscriptions table, and the assisted cancel flow with its typed-confirmation safety net:
 
-<video src="./docs/solvo-demo.mp4" poster="./docs/demo-poster.jpg" controls width="100%"></video>
+<!-- GitHub strips relative paths from <video>. Host the MP4 on a release (demo-v1) and use an absolute github.com URL. -->
+<p align="center">
+  <video
+    src="https://github.com/SalzDevs/solvo/releases/download/demo-v1/solvo-demo.mp4"
+    poster="https://raw.githubusercontent.com/SalzDevs/solvo/main/docs/demo-poster.jpg"
+    controls
+    playsinline
+    width="100%"
+  ></video>
+</p>
+
+<p align="center">
+  <a href="https://github.com/SalzDevs/solvo/releases/download/demo-v1/solvo-demo.mp4">Watch or download the demo (MP4)</a>
+</p>
 
 *Recorded against the demo data (`bun run demo`) — no real subscriptions were harmed in the making of this video.*
 
